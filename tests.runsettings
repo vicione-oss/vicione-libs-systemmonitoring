@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+    <RunConfiguration>
+        <ResultsDirectory>artifacts/tests</ResultsDirectory>
+    </RunConfiguration>
+    <DataCollectionRunSettings>
+        <DataCollectors>
+            <DataCollector friendlyName="XPlat Code Coverage">
+                <Configuration>
+                    <!-- Für die Ermittlung der Codeabdeckung mit Coverlet kann folgende Anleitung verwendet werden: https://github.com/coverlet-coverage/coverlet#vstest-integration-preferred-due-to-known-issue -->
+                    <Format>cobertura</Format>
+                    <Exclude>[*Test*]*,[*Fact*]*</Exclude>
+                    <ExcludeByAttribute>GeneratedCode</ExcludeByAttribute>
+                    <IncludeTestAssembly>false</IncludeTestAssembly>
+                </Configuration>
+            </DataCollector>
+        </DataCollectors>
+    </DataCollectionRunSettings>
+</RunSettings>

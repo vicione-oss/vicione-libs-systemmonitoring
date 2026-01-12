@@ -1,0 +1,24 @@
+include:
+  - project: 'acx/tooling/templates'
+    file: '/CI-Templates/v2/dotnet.yml'
+
+default:
+  image: mcr.microsoft.com/dotnet/sdk:9.0
+
+Build:
+  extends: .dotnet-build
+
+xUnit:
+  extends: .dotnet-test-xunit
+
+Deploy:
+  extends: .dotnet-deploy-nuget
+  variables:
+    PROJECT: 'src/ViciOne.SystemMonitoring/SystemMonitoring.csproj'
+    REPO: 'JFrogViciOne'
+
+Release:
+  extends: .dotnet-release-nuget
+  variables:
+    PROJECT: 'src/ViciOne.SystemMonitoring/SystemMonitoring.csproj'
+    REPO: 'JFrogViciOne'
