@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.IO.Abstractions;
-using FluentAssertions;
+using AwesomeAssertions;
 using NSubstitute;
 using ViciOne.SystemMonitoring.Collectors;
 

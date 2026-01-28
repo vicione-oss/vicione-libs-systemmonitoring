@@ -1,5 +1,5 @@
-﻿using FluentAssertions;
-using FluentAssertions.Extensions;
+﻿using AwesomeAssertions;
+using AwesomeAssertions.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
