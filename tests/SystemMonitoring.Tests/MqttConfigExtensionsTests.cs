@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+﻿using AwesomeAssertions;
 using MQTTnet;
 using MQTTnet.Formatter;
 using ViciOne.SystemMonitoring.Configuration;

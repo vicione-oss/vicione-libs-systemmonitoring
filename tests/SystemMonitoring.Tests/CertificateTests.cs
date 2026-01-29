@@ -1,5 +1,5 @@
 ﻿using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using ViciOne.SystemMonitoring.Configuration;
 
 namespace ViciOne.SystemMonitoring;
