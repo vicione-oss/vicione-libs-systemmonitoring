@@ -2,6 +2,10 @@
 
 ## 1.0.0 - unreleased
 
+### Added
+
+- Add `LoadAverageMetricsCollector`
+
 ### Changed
 
 - Update `.NET` to `10.0`
