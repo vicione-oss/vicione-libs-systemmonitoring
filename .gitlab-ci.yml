@@ -10,17 +10,35 @@
 .update_nuget_source_rw: &update_nuget_source_rw
   - dotnet nuget update source JFrogViciOne --configfile NuGet.Config -u $NuGet_User_RW_JFrog -p $NuGet_PW_RW_JFrog --store-password-in-clear-text
 
-.rules_tag: &rules_tag
+.rule_tag: &rule_tag
   if: "$CI_COMMIT_TAG"
 
-.rules: &rules
-  <<: *rules_tag
+.rule_default_branch: &rule_default_branch
   if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
-  if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  if: $CI_PIPELINE_SOURCE == "web"
+
+.rule_mr: &rule_mr
+  if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+.rule_web: &rule_web
+  if: '$CI_PIPELINE_SOURCE == "web"'
+
+.rules: &rules
+  - *rule_tag
+  - *rule_default_branch
+  - *rule_mr
+  - *rule_web
 
 .rules_manual: &rules_manual
-    <<: *rules
+  - <<: *rule_tag
+    when: manual
+    allow_failure: true
+  - <<: *rule_default_branch
+    when: manual
+    allow_failure: true
+  - <<: *rule_mr
+    when: manual
+    allow_failure: true
+  - <<: *rule_web
     when: manual
     allow_failure: true
 
@@ -48,14 +66,14 @@ Version:
   artifacts:
     reports:
       dotenv: version.env
+  rules: *rules
 
 ### CI Components ###
 include:
   - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-restore@2.1.1
     inputs:
       image: ${IMAGE_NAME}
-      rules:
-        - <<: *rules
+      rules: *rules
       before_script:
         - *activate_mise
         - *update_nuget_source_ro
@@ -65,8 +83,7 @@ include:
   - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-build@2.1.1
     inputs:
       image: ${IMAGE_NAME}
-      rules:
-        - <<: *rules
+      rules: *rules
       before_script:
         - *activate_mise
         - *update_nuget_source_ro
@@ -76,8 +93,7 @@ include:
   - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-test@1.0.1
     inputs:
       image: ${IMAGE_NAME}
-      rules:
-        - <<: *rules
+      rules: *rules
       before_script:
         - *activate_mise
         - *update_nuget_source_ro
@@ -87,8 +103,7 @@ include:
   - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-pack@2.1.1
     inputs:
       image: ${IMAGE_NAME}
-      rules:
-        - <<: *rules_manual
+      rules: *rules_manual
       before_script:
         - *activate_mise
         - 'echo "PackageVersion: ${PackageVersion:-notAssigned}"'
@@ -99,8 +114,7 @@ include:
       image: ${IMAGE_NAME}
       source: "JFrogViciOne"
       filename_pattern: "./src/*"
-      rules:
-        - <<: *rules_manual
+      rules: *rules_manual
       before_script:
         - *activate_mise
         - *update_nuget_source_rw
