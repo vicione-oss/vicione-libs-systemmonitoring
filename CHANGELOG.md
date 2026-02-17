@@ -1,22 +1,37 @@
 # Changelog
 
+## 1.0.0 - unreleased
+
+### Changed
+
+- Update `.NET` to `10.0`
+- Update `Microsoft.Extensions.Configuration.Abstractions` to `10.0.3`
+- Update `Microsoft.Extensions.DependencyInjection` to `10.0.3`
+- Update `Microsoft.Extensions.DependencyInjection.Abstractions` to `10.0.0`
+- Update `Microsoft.Extensions.Hosting` to `10.0.3`
+- Update `Microsoft.Extensions.Hosting.Abstractions` to `10.0.3`
+- Update `Microsoft.Extensions.Logging.Abstractions` to `10.0.3`
+- Update `Microsoft.Extensions.Options` to `10.0.3`
+- Update `MQTTnet` to `5.1.0.1559`
+- Update `System.IO.Abstractions` to `22.1.0`
+
 ## 0.10.0 - 2025-12-03
 
 ### Added
 
-- Publish metrics for RX and TX bandwith usage for non full duplex interfaces
+- Publish metrics for RX and TX bandwidth usage for non full duplex interfaces
 - Add units to metrics
 - Add wrap-around handling
 - Limit percentages in network usage
 
 ### Removed
 
-- Decreasing byte counts handling in NetworkMetricsCollctor
+- Decreasing byte counts handling in NetworkMetricsCollector
 - Reduce log output on connection loss to MQTT
 
 ### Changed
 
-- Round network bandwith values to two decimal digits
+- Round network bandwidth values to two decimal digits
 
 ## 0.9.0 - 2025-05-27
 

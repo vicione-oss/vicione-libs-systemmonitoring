@@ -138,8 +138,8 @@ public sealed class MqttOutput : IOutput, IDisposable
             .WithTopic(topic)
             .WithPayload(Serialize(metric))
             .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce)
-            .WithUserProperty("Timestamp", timestamp.ToString("O"))
-            .WithUserProperty("Unit", metric.Unit)
+            .WithUserProperty("Timestamp", Encoding.UTF8.GetBytes(timestamp.ToString("O")))
+            .WithUserProperty("Unit", Encoding.UTF8.GetBytes(metric.Unit))
             .Build();
         await _client.PublishAsync(message, cancellationToken);
     }
