@@ -804,3 +804,5 @@ dotnet_diagnostic.CA1707.severity = none # Identifiers should not contain unders
 dotnet_diagnostic.CA1861.severity = none # Avoid constant arrays as arguments
 dotnet_diagnostic.CA2326.severity = none # Do not use TypeNameHandling values other than None
 dotnet_diagnostic.CA2327.severity = none # Do not use insecure JsonSerializerSettings
+dotnet_diagnostic.CA1515.severity = none # Consider making public types internal
+

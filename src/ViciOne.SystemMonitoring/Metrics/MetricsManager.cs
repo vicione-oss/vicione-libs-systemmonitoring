@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ViciOne.SystemMonitoring.Collectors;
 using ViciOne.SystemMonitoring.Configuration;

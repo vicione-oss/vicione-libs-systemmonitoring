@@ -1,4 +1,4 @@
-﻿using ViciOne.SystemMonitoring.Metrics;
+using ViciOne.SystemMonitoring.Metrics;
 
 namespace ViciOne.SystemMonitoring.Collectors;
 

@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 using ViciOne.SystemMonitoring.Collectors;
 
 namespace ViciOne.SystemMonitoring;

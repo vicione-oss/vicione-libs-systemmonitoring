@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 using AwesomeAssertions.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -14,7 +14,7 @@ public class MonitoringService_
     {
         var metricsManager = Substitute.For<IMetricsManager>();
         metricsManager.CollectAllMetrics(Arg.Any<int>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns([new() { Group = "Test", Name = "My", IntervalInMinutes = 1, Value = 0, Unit = string.Empty,}]);
+            .Returns([new() { Group = "Test", Name = "My", IntervalInMinutes = 1, Value = 0, Unit = string.Empty, }]);
         var output = Substitute.For<IOutput>();
         using SemaphoreSlim semaphore = new(0, 1);
         output.When(o => o.Publish(Arg.Any<IReadOnlyCollection<Metric>>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()))

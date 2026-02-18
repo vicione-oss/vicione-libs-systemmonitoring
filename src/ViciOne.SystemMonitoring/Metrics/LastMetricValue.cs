@@ -1,4 +1,4 @@
-﻿namespace ViciOne.SystemMonitoring.Metrics;
+namespace ViciOne.SystemMonitoring.Metrics;
 
 public sealed class LastMetricValue(string name, object value, string unit) : IMetricValue
 {
