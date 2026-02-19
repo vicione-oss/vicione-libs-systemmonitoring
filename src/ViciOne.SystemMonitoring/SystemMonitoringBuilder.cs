@@ -31,6 +31,7 @@ public readonly ref struct SystemMonitoringBuilder
     {
         AddCollector<CpuMetricsCollector>()
             .AddCollector<DiskMetricsCollector>()
+            .AddCollector<LoadAverageMetricsCollector>()
             .AddCollector<NetworkMetricsCollector>()
             .AddCollector<ProcessMetricsCollector>()
             .AddCollector<ProcessorMetricsCollector>()

@@ -58,6 +58,9 @@
     <None Update="EdgeS\proc\cpuinfo">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="EdgeS\proc\loadavg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="EdgeS\proc\device-tree\model">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
