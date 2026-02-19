@@ -50,16 +50,16 @@ public class MqttOutput_
         var option = new MqttConfig();
         var conf = Substitute.For<IOptionsMonitor<MonitoringConfig>>();
         conf.CurrentValue.Returns(new MonitoringConfig() { Mqtt = new() { Host = "localhost" } });
-        client.ConnectAsync(Arg.Any<MqttClientOptions>()).Returns(new MqttClientConnectResult());
+        client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>()).Returns(new MqttClientConnectResult());
         client.PublishAsync(Arg.Any<MqttApplicationMessage>(), Arg.Any<CancellationToken>()).ThrowsAsync(new MqttConnectingFailedException("Test", new InvalidOperationException("Test")));
         using var output = new MqttOutput(client, conf, logger);
         var metric = new Metric() { Group = "Test", IntervalInMinutes = 1, Name = "Test", Unit = "Test", Value = "0" };
 
-        await output.Publish([metric], DateTimeOffset.MinValue, CancellationToken.None);
+        await output.Publish([metric], DateTimeOffset.MinValue, TestContext.Current.CancellationToken);
 
         client.PublishAsync(Arg.Any<MqttApplicationMessage>(), Arg.Any<CancellationToken>()).Returns(new MqttClientPublishResult(null, MqttClientPublishReasonCode.Success, string.Empty, []));
 
-        await output.Publish([metric], DateTimeOffset.MinValue, CancellationToken.None);
+        await output.Publish([metric], DateTimeOffset.MinValue, TestContext.Current.CancellationToken);
 
         logger.Entries.Last().Message.Should().MatchEquivalentOf("*Reconnect*");
     }

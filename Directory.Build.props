@@ -59,6 +59,8 @@
   <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('tests'))">
     <IsPackable>false</IsPackable>
     <IsPublishable>false</IsPublishable>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner> <!-- Microsoft Testing Platform command line experience -->
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <!-- Beispielprojekte sollen beim Veröffentlichen ignoriert und nicht als NuGet-Paket verpackt werden -->
