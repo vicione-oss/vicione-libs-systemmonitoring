@@ -1,4 +1,4 @@
-﻿namespace ViciOne.SystemMonitoring;
+namespace ViciOne.SystemMonitoring;
 
 public enum NodeType
 {

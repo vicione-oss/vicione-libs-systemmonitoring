@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;

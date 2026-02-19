@@ -1,4 +1,4 @@
-﻿using System.Runtime.Versioning;
+using System.Runtime.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using ViciOne.SystemMonitoring.Metrics;
 

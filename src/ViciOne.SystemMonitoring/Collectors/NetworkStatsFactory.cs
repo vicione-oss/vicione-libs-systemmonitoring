@@ -1,4 +1,4 @@
-﻿namespace ViciOne.SystemMonitoring.Collectors;
+namespace ViciOne.SystemMonitoring.Collectors;
 
 internal static class NetworkStatsFactory
 {

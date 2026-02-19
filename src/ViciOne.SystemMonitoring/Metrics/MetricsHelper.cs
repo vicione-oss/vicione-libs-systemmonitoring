@@ -1,4 +1,4 @@
-﻿namespace ViciOne.SystemMonitoring.Metrics;
+namespace ViciOne.SystemMonitoring.Metrics;
 
 public static class MetricsHelper
 {

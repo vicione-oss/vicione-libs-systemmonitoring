@@ -1,4 +1,4 @@
-﻿using System.IO.Abstractions;
+using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using ViciOne.SystemMonitoring.Metrics;

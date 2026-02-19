@@ -272,3 +272,13 @@ SystemMonitoring/
         └── 1min
             └── JsonPayload of all Process Information
 ```
+
+## Contributing
+
+### Code Formatting
+
+This project enforces code style rules via [`.editorconfig`](.editorconfig). Before committing, run:
+
+```sh
+dotnet format system-monitoring.slnx
+```
