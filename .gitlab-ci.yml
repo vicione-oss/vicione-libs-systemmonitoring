@@ -1,15 +1,35 @@
+.rules: &rules
+  - if: "$CI_COMMIT_TAG"
+    when: manual
+    allow_failure: true
+  - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  - if: $CI_PIPELINE_SOURCE == "web"
+
 include:
   - project: 'vicione-oss/tooling/templates'
     file: '/CI-Templates/v2/dotnet.yml'
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-restore@2.0.0
+    inputs:
+      rules: *rules
+      before_script:
+        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+        - dotnet nuget update source JFrogViciOne --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-build@2.0.0
+    inputs:
+      rules: *rules
+      before_script:
+        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-test@2.0.0
+    inputs:
+      rules: *rules
+      before_script:
+        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+        - dotnet nuget remove source JFrogViciOne
+      coverage: true
 
 default:
   image: mcr.microsoft.com/dotnet/sdk:10.0
-
-Build:
-  extends: .dotnet-build
-
-xUnit:
-  extends: .dotnet-test-xunit
 
 Deploy:
   extends: .dotnet-deploy-nuget

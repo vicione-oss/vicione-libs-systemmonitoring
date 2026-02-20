@@ -23,11 +23,11 @@ public class MonitoringService_
         FakeTimeProvider timeProvider = new();
         using MonitoringService service = new(metricsManager, [output], logger, timeProvider);
 
-        await service.StartAsync(CancellationToken.None);
-        await semaphore.WaitAsync(1_000);
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await semaphore.WaitAsync(1_000, TestContext.Current.CancellationToken);
         timeProvider.Advance(1.Minutes());
-        await semaphore.WaitAsync(1_000);
-        await service.StopAsync(CancellationToken.None);
+        await semaphore.WaitAsync(1_000, TestContext.Current.CancellationToken);
+        await service.StopAsync(TestContext.Current.CancellationToken);
 
         await metricsManager.Received(1).Initialize(Arg.Any<CancellationToken>());
         await output.Received(1).Publish(Arg.Is<IReadOnlyCollection<Metric>>(m => m.Single().Name == "My"), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
