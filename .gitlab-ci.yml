@@ -1,44 +1,123 @@
+### Scripts ###
+.activate_mise: &activate_mise
+  - mise install
+  - eval "$(mise env)"
+
+.update_nuget_source_ro: &update_nuget_source_ro
+  - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+  - dotnet nuget update source JFrogViciOne --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
+
+.update_nuget_source_rw: &update_nuget_source_rw
+  - dotnet nuget update source JFrogViciOne --configfile NuGet.Config -u $NuGet_User_RW_JFrog -p $NuGet_PW_RW_JFrog --store-password-in-clear-text
+
+.rule_tag: &rule_tag
+  if: "$CI_COMMIT_TAG"
+
+.rule_default_branch: &rule_default_branch
+  if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
+
+.rule_mr: &rule_mr
+  if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+.rule_web: &rule_web
+  if: '$CI_PIPELINE_SOURCE == "web"'
+
 .rules: &rules
-  - if: "$CI_COMMIT_TAG"
+  - *rule_tag
+  - *rule_default_branch
+  - *rule_mr
+  - *rule_web
+
+.rules_manual: &rules_manual
+  - <<: *rule_tag
     when: manual
     allow_failure: true
-  - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
-  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  - if: $CI_PIPELINE_SOURCE == "web"
+  - <<: *rule_default_branch
+    when: manual
+    allow_failure: true
+  - <<: *rule_mr
+    when: manual
+    allow_failure: true
+  - <<: *rule_web
+    when: manual
+    allow_failure: true
 
+### Defaults ###
+variables:
+  IMAGE_NAME: registry.gitlab.com/vicione-oss/tooling/base-image:vicione-latest
+  RUNNER_TAG: saas-linux-small-amd64
+
+stages:
+  - build
+  - test
+  - pack
+  - publish
+
+Version:
+  stage: .pre
+  script:
+    - if [[ -f "VERSION" ]]; then VERSION=$(head -n 1 VERSION); fi
+    - if [[ ! -z "${CI_COMMIT_TAG}" ]]; then VERSION=$(echo $CI_COMMIT_TAG | sed 's/v//g'); fi
+    - if [[ -z "${VERSION}" ]]; then VERSION='0.1.0'; fi
+    - if [[ -z "${CI_COMMIT_TAG}" ]]; then VERSION="${VERSION}-ci${CI_PIPELINE_ID}"; fi
+    - 'echo "Version=${VERSION}" >> version.env'
+    - 'echo "PackageVersion=${VERSION}" >> version.env'
+    - cat version.env
+  artifacts:
+    reports:
+      dotenv: version.env
+  rules: *rules
+
+### CI Components ###
 include:
-  - project: 'vicione-oss/tooling/templates'
-    file: '/CI-Templates/v2/dotnet.yml'
-  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-restore@2.0.0
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-restore@2.1.1
     inputs:
+      image: ${IMAGE_NAME}
       rules: *rules
       before_script:
-        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
-        - dotnet nuget update source JFrogViciOne --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
-  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-build@2.0.0
+        - *activate_mise
+        - *update_nuget_source_ro
+      tags:
+        - ${RUNNER_TAG}
+  ### Test & Build
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-build@2.1.1
     inputs:
+      image: ${IMAGE_NAME}
       rules: *rules
       before_script:
-        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
-  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-test@2.0.0
+        - *activate_mise
+        - *update_nuget_source_ro
+        - echo "$Version"
+      tags:
+        - ${RUNNER_TAG}
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-test@2.1.1
     inputs:
+      image: ${IMAGE_NAME}
       rules: *rules
       before_script:
-        - dotnet nuget update source JFrogNuGetProxy --configfile NuGet.Config -u $NuGet_User_JFrog -p $NuGet_PW_JFrog --store-password-in-clear-text
-        - dotnet nuget remove source JFrogViciOne
+        - *activate_mise
+        - *update_nuget_source_ro
+      tags:
+        - ${RUNNER_TAG}
       coverage: true
-
-default:
-  image: mcr.microsoft.com/dotnet/sdk:10.0
-
-Deploy:
-  extends: .dotnet-deploy-nuget
-  variables:
-    PROJECT: 'src/ViciOne.SystemMonitoring/SystemMonitoring.csproj'
-    REPO: 'JFrogViciOne'
-
-Release:
-  extends: .dotnet-release-nuget
-  variables:
-    PROJECT: 'src/ViciOne.SystemMonitoring/SystemMonitoring.csproj'
-    REPO: 'JFrogViciOne'
+  ### NuGet Packages
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-pack@2.1.1
+    inputs:
+      image: ${IMAGE_NAME}
+      rules: *rules_manual
+      before_script:
+        - *activate_mise
+        - 'echo "PackageVersion: ${PackageVersion:-notAssigned}"'
+      tags:
+        - ${RUNNER_TAG}
+  - component: $CI_SERVER_FQDN/vicione-oss/tooling/dotnet-component/dotnet-nuget-push@2.1.1
+    inputs:
+      image: ${IMAGE_NAME}
+      source: "JFrogViciOne"
+      filename_pattern: "./src/*"
+      rules: *rules_manual
+      before_script:
+        - *activate_mise
+        - *update_nuget_source_rw
+      tags:
+        - ${RUNNER_TAG}
