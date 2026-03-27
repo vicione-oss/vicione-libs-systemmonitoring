@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 - unreleased
+
+### Fixed
+
+- Add Int32 DataType to `MqttOutput`
+
 ## 1.0.0 - 2026-03-20
 
 ### Added
