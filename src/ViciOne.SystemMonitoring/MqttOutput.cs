@@ -158,6 +158,7 @@ public sealed class MqttOutput : IOutput, IDisposable
                 AggregatedMetricValue v => JsonSerializer.Serialize(v, MqttOutputGenerationContext.Default.AggregatedMetricValue),
                 List<LinuxProcessInfo> v => JsonSerializer.Serialize(v, MqttOutputGenerationContext.Default.ListLinuxProcessInfo),
                 Dictionary<string, int> v => JsonSerializer.Serialize(v, MqttOutputGenerationContext.Default.DictionaryStringInt32),
+                int v => JsonSerializer.Serialize(v, MqttOutputGenerationContext.Default.Int32),
                 _ => throw new InvalidOperationException("Unsupported value type.")
             };
         }
