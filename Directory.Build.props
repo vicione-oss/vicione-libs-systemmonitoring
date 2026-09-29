@@ -9,7 +9,7 @@
     <RuntimeIdentifiers Condition="$(MSBuildProjectDirectory.Contains('src'))">linux-x64;linux-arm64;win-x64</RuntimeIdentifiers>
     <Description>-</Description>
     <Product>ViciOne</Product>
-    <Company>ifm software</Company>
+    <Company>ViciOne open automation gmbh</Company>
     <Year>$([System.DateTime]::Now.Year)</Year>
     <Copyright>Copyright © $(Company) $(Year)</Copyright>
     <NeutralLanguage>en-US</NeutralLanguage>
