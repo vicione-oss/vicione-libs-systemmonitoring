@@ -50,6 +50,12 @@
     <None Update="EdgeS\proc\cpuinfo">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="EdgeS\proc\diskstats">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="EdgeS\proc\diskstats2">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="EdgeS\proc\loadavg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

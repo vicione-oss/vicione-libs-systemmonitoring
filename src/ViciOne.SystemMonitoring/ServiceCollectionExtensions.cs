@@ -11,6 +11,9 @@ public static class ServiceCollectionExtensions
     {
         build(new(services));
         return services.AddHostedService<MonitoringService>()
-            .AddSingleton<IMetricsManager, MetricsManager>();
+            .AddSingleton<MetricsManager>()
+            .AddSingleton<IMetricsManager>(s => s.GetRequiredService<MetricsManager>())
+            .AddSingleton<ILiveMetricsSource>(s => s.GetRequiredService<MetricsManager>())
+            .AddSingleton<ILiveMonitoring, LiveMonitoringService>();
     }
 }

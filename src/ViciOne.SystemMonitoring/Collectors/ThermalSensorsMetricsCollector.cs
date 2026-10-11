@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Options;
@@ -7,7 +8,7 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringConfig> options, IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringConfig> options, IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
@@ -53,13 +54,25 @@ public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringCon
         }
     }
 
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var sensorData = CollectThermalAndFanMetrics(options.CurrentValue.NodeType);
+            return Task.FromResult(CreateMetricsData(sensorData).ToMetrics(Name, null, 0, m => m.Value).ToList());
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live Thermal Sensor metrics.", ex);
+        }
+    }
+
     private Dictionary<string, double> CollectThermalAndFanMetrics(NodeType nodeType)
     {
         var metrics = new Dictionary<string, double>();
 
         try
         {
-
             switch (nodeType)
             {
                 case NodeType.Unknown:
@@ -77,7 +90,7 @@ public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringCon
                             var tempName = tempFile.Replace("_input", "_label", StringComparison.InvariantCulture);
                             var tempLabel = fileSystem.File.Exists(tempName) ? fileSystem.File.ReadAllText(tempName).Trim() : "temp";
 
-                            if (double.TryParse(fileSystem.File.ReadAllText(tempFile).Trim(), out var tempValue))
+                            if (double.TryParse(fileSystem.File.ReadAllText(tempFile).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var tempValue))
                                 metrics[$"{sensorName}_{tempLabel}"] = tempValue / 1000.0; // Convert millidegree to degree
                         }
 
@@ -87,7 +100,7 @@ public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringCon
                             var fanLabel = fanFile.Replace("_input", "_label", StringComparison.InvariantCulture);
                             var fanName = fileSystem.File.Exists(fanLabel) ? fileSystem.File.ReadAllText(fanLabel).Trim() : "fan";
 
-                            if (double.TryParse(fileSystem.File.ReadAllText(fanFile).Trim(), out var fanValue))
+                            if (double.TryParse(fileSystem.File.ReadAllText(fanFile).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var fanValue))
                                 metrics[$"{sensorName}_{fanName}"] = fanValue;
                         }
                     }
@@ -98,21 +111,21 @@ public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringCon
                 case NodeType.RaspberryPi5:
 
                     var cpuTempPath = "/sys/class/thermal/thermal_zone0/temp";
-                    if (fileSystem.File.Exists(cpuTempPath) && double.TryParse(fileSystem.File.ReadAllText(cpuTempPath).Trim(), out var cpuTemp))
+                    if (fileSystem.File.Exists(cpuTempPath) && double.TryParse(fileSystem.File.ReadAllText(cpuTempPath).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var cpuTemp))
                         metrics["RaspberryPi_CPU_Temperature"] = cpuTemp / 1000.0;
                     else
                         metrics["RaspberryPi_CPU_Temperature"] = -1;
 
 
                     var mainboardTempPath = "/sys/class/thermal/thermal_zone1/temp";
-                    if (fileSystem.File.Exists(mainboardTempPath) && double.TryParse(fileSystem.File.ReadAllText(mainboardTempPath).Trim(), out var mainboardTemp))
+                    if (fileSystem.File.Exists(mainboardTempPath) && double.TryParse(fileSystem.File.ReadAllText(mainboardTempPath).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var mainboardTemp))
                         metrics["RaspberryPi_Mainboard_Temperature"] = mainboardTemp / 1000.0;
                     else
                         metrics["RaspberryPi_Mainboard_Temperature"] = -1;
 
 
                     var fanSpeedPath = "/sys/class/hwmon/hwmon0/fan1_input";
-                    if (fileSystem.File.Exists(fanSpeedPath) && double.TryParse(fileSystem.File.ReadAllText(fanSpeedPath).Trim(), out var fanSpeed))
+                    if (fileSystem.File.Exists(fanSpeedPath) && double.TryParse(fileSystem.File.ReadAllText(fanSpeedPath).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var fanSpeed))
                         metrics["RaspberryPi_CPU_Fan_Speed"] = fanSpeed;
                     else
                         metrics["RaspberryPi_CPU_Fan_Speed"] = -1;

@@ -5,7 +5,7 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
     public int IntervalInMinutes { get; } = 1;
     public string Name => "loadavg";
@@ -67,6 +67,9 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
             throw new InvalidOperationException("Error collecting load average metrics.", ex);
         }
     }
+
+    public async Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+        => [.. (await CollectMetrics(IntervalInMinutes, DateTimeOffset.UtcNow, cancellationToken)).Select(MetricsHelper.WithoutInterval)];
 
     private async Task<(double Load1, double Load5, double Load15, int Running, int Total)> ReadLoadAverageAsync()
     {

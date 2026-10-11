@@ -6,12 +6,12 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector
+public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector, ILiveMetricsCollector
 {
     private readonly Lock _lock = new();
 
-    private readonly Dictionary<string, double> _previousTotalCpuData = [];
-    private readonly List<Dictionary<string, double>> _previousPerCoreCpuData = [];
+    private readonly CpuTimes _intervalBaseline = new();
+    private readonly CpuTimes _liveBaseline = new();
 
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<List<LastMetricValue>>> _perCoreFiveMinuteBuffer = [];
@@ -29,8 +29,8 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
 
             lock (_lock)
             {
-                UpdatePreviousTotalValues(totalCpuData);
-                UpdatePreviousPerCoreValues(perCoreCpuData);
+                _intervalBaseline.Update(totalCpuData, perCoreCpuData);
+                _liveBaseline.Update(totalCpuData, perCoreCpuData);
             }
         }
         catch (Exception ex)
@@ -41,6 +41,29 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         return Task.CompletedTask;
     }
 
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (totalCpuData, perCoreCpuData) = CollectCpuMetrics();
+
+            lock (_lock)
+            {
+                var (totalPercentages, perCorePercentages) = CalculatePercentages(totalCpuData, perCoreCpuData, _liveBaseline);
+                _liveBaseline.Update(totalCpuData, perCoreCpuData);
+
+                List<Metric> metrics = [];
+                metrics.AddRange(CreateMetricsData(totalPercentages).ToMetrics(Name, "total", 0, m => m.Value));
+                metrics.AddRange(CreatePerCoreMetrics(0, CreatePerCoreMetricsData(perCorePercentages), m => m.Value));
+                return Task.FromResult(metrics);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live CPU metrics.", ex);
+        }
+    }
+
     public Task<List<Metric>> CollectMetrics(int interval, DateTimeOffset cycleStartTime, CancellationToken cancellationToken)
     {
         try
@@ -49,13 +72,8 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
 
             lock (_lock)
             {
-                // /proc/stat has Jiffies, not percentages - we need to calculate the diff's and convert to percentages
-                var totalPercentages = CalculateTotalCpuUsagePercentage(CalculateTotalDifferences(totalCpuData, _previousTotalCpuData));
-                var perCorePercentages = CalculatePerCoreCpuUsagePercentage(CalculatePerCoreDifferences(perCoreCpuData, _previousPerCoreCpuData));
-                totalPercentages.Add("total_system", totalPercentages["user"] + totalPercentages["system"] + totalPercentages["steal"]);
-
-                UpdatePreviousTotalValues(totalCpuData);
-                UpdatePreviousPerCoreValues(perCoreCpuData);
+                var (totalPercentages, perCorePercentages) = CalculatePercentages(totalCpuData, perCoreCpuData, _intervalBaseline);
+                _intervalBaseline.Update(totalCpuData, perCoreCpuData);
 
                 var totalMetrics = CreateMetricsData(totalPercentages);
                 var perCoreMetrics = CreatePerCoreMetricsData(perCorePercentages);
@@ -169,6 +187,15 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         }
     }
 
+    private static (Dictionary<string, double> Total, List<Dictionary<string, double>> PerCore) CalculatePercentages(
+        Dictionary<string, double> totalCpuData, List<Dictionary<string, double>> perCoreCpuData, CpuTimes baseline)
+    {
+        var totalPercentages = CalculateTotalCpuUsagePercentage(CalculateTotalDifferences(totalCpuData, baseline.Total));
+        var perCorePercentages = CalculatePerCoreCpuUsagePercentage(CalculatePerCoreDifferences(perCoreCpuData, baseline.PerCore));
+        totalPercentages.Add("total_system", totalPercentages["user"] + totalPercentages["system"] + totalPercentages["steal"]);
+        return (totalPercentages, perCorePercentages);
+    }
+
     private static Dictionary<string, double> CalculateTotalCpuUsagePercentage(Dictionary<string, double> differences)
     {
         var totalJiffies = differences.Values.Sum();
@@ -214,19 +241,6 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         return result;
     }
 
-    private void UpdatePreviousTotalValues(Dictionary<string, double> totalData)
-    {
-        _previousTotalCpuData.Clear();
-        foreach (var kv in totalData)
-            _previousTotalCpuData[kv.Key] = kv.Value;
-    }
-
-    private void UpdatePreviousPerCoreValues(List<Dictionary<string, double>> perCoreData)
-    {
-        _previousPerCoreCpuData.Clear();
-        _previousPerCoreCpuData.AddRange(perCoreData.Select(data => new Dictionary<string, double>(data)));
-    }
-
     private static List<LastMetricValue> CreateMetricsData(Dictionary<string, double> cpuData)
         => [.. cpuData.Select(kv => new LastMetricValue(kv.Key, kv.Value, MetricUnit.Percent))];
 
@@ -257,6 +271,26 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         {
             foreach (var metric in perCoreMetrics[i].ToMetrics(Name, $"core{i}", intervalInMinutes, getValue))
                 yield return metric;
+        }
+    }
+
+    /// <summary>
+    /// CPU times of one reading of /proc/stat, the reference for the next difference.
+    /// </summary>
+    private sealed class CpuTimes
+    {
+        public Dictionary<string, double> Total { get; } = [];
+
+        public List<Dictionary<string, double>> PerCore { get; } = [];
+
+        public void Update(Dictionary<string, double> total, List<Dictionary<string, double>> perCore)
+        {
+            Total.Clear();
+            foreach (var (key, value) in total)
+                Total[key] = value;
+
+            PerCore.Clear();
+            PerCore.AddRange(perCore.Select(data => new Dictionary<string, double>(data)));
         }
     }
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 - Unreleased
+
+### Added
+
+- `ILiveMonitoring`, reads the enabled collectors every few seconds while subscribed, without changing the regular values
+- `ILiveMetricsCollector`, the extension point for custom collectors that can also be read live
+- `LinuxProcessInfo.StartTime`, when the process started
+- `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
+- `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
+
+### Fixed
+
+- The uptime and the thermal sensors are read correctly whatever the culture of the process
+
 ## 1.0.1 - 2026-03-27
 
 ### Fixed
