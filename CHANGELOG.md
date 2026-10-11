@@ -10,6 +10,10 @@
 - `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
 - `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
 
+### Changed
+
+- `swap/…/total` and `swap/…/used` carry the current swap size in kB instead of its change since the previous reading. **Behaviour change:** a consumer that added the values up now gets the size itself
+
 ### Fixed
 
 - The uptime and the thermal sensors are read correctly whatever the culture of the process

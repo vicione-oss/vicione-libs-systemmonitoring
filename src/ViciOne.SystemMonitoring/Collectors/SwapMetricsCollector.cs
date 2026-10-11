@@ -24,10 +24,10 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
 
             lock (_lock)
             {
-                var differences = CalculateDifferences(currentSwapStats, _previousSwapStats);
+                var values = CalculateValues(currentSwapStats, _previousSwapStats);
                 UpdatePreviousValues(currentSwapStats);
 
-                var metricsData = CreateMetricsData(differences);
+                var metricsData = CreateMetricsData(values);
                 List<Metric> metrics = [];
 
                 metrics.AddRange(metricsData.ToMetrics(Name, null, IntervalInMinutes, m => m.Value));
@@ -111,15 +111,18 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
         return swapStats;
     }
 
-    private static Dictionary<string, double> CalculateDifferences(
+    /// <summary>
+    /// <c>total</c> and <c>used</c> as read, the page counters <c>swap_in</c> and <c>swap_out</c> as the change since the previous reading.
+    /// </summary>
+    private static Dictionary<string, double> CalculateValues(
         Dictionary<string, double> currentData,
         Dictionary<string, double> previousData)
-    {
-        if (previousData.Count == 0)
-            return currentData.ToDictionary(kv => kv.Key, kv => 0.0);
+        => currentData.ToDictionary(kv => kv.Key, kv => !IsCounter(kv.Key)
+            ? kv.Value
+            : previousData.TryGetValue(kv.Key, out var previous) ? kv.Value - previous : 0.0);
 
-        return currentData.ToDictionary(kv => kv.Key, kv => kv.Value - previousData.GetValueOrDefault(kv.Key, 0));
-    }
+    private static bool IsCounter(string name)
+        => name.StartsWith("swap", StringComparison.Ordinal);
 
     private void UpdatePreviousValues(Dictionary<string, double> currentData)
     {
@@ -129,7 +132,7 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
     }
 
     private static List<LastMetricValue> CreateMetricsData(Dictionary<string, double> swapData)
-        => [.. swapData.Select(kv => new LastMetricValue(kv.Key, kv.Value, kv.Key.StartsWith("swap", false, CultureInfo.InvariantCulture) ? MetricUnit.None : MetricUnit.Kilobyte))];
+        => [.. swapData.Select(kv => new LastMetricValue(kv.Key, kv.Value, IsCounter(kv.Key) ? MetricUnit.None : MetricUnit.Kilobyte))];
 
     private static void UpdateBuffer(
         List<List<LastMetricValue>> buffer,
