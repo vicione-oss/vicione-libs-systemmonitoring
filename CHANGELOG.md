@@ -13,6 +13,7 @@
 ### Fixed
 
 - The uptime and the thermal sensors are read correctly whatever the culture of the process
+- Processes with a space in their name report their CPU usage and start time correctly
 
 ## 1.0.1 - 2026-03-27
 

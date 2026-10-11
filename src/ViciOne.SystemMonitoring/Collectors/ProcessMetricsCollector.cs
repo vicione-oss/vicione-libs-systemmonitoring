@@ -129,7 +129,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             try
             {
                 statusLines = fileSystem.File.ReadAllLines(statusFile);
-                statFields = fileSystem.File.ReadAllText(statFile).Split(' ');
+                statFields = SplitStatFields(fileSystem.File.ReadAllText(statFile));
                 if (fileSystem.File.Exists(cmdlineFile))
                     cmdline = fileSystem.File.ReadAllText(cmdlineFile).Replace('\0', ' ').Trim();
             }
@@ -189,6 +189,20 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         {
             throw new InvalidOperationException($"Error processing process '{pid}'.", ex);
         }
+    }
+
+    /// <summary>
+    /// The fields of /proc/[pid]/stat by their position; the name in field 1 is in parentheses and may contain spaces and
+    /// parentheses itself.
+    /// </summary>
+    internal static string[] SplitStatFields(string stat)
+    {
+        var nameStart = stat.IndexOf('(', StringComparison.Ordinal);
+        var nameEnd = stat.LastIndexOf(')');
+        if (nameStart < 0 || nameEnd < nameStart)
+            return stat.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return [stat[..nameStart].Trim(), stat[nameStart..(nameEnd + 1)], .. stat[(nameEnd + 1)..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)];
     }
 
     private static MemoryDetails GetMemoryDetails(string[] statusLines)
