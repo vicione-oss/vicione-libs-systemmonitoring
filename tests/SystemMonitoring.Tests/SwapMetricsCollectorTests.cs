@@ -41,6 +41,23 @@ public class SwapMetricsCollector_CollectMetrics
             .And.Contain("swap_in", (0, MetricUnit.None));
     }
 
+    [Fact]
+    public async Task Keeps_the_pages_of_the_interval_while_read_live()
+    {
+        var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
+        SwapMetricsCollector collector = new(fileSystem);
+        await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+        await collector.CollectLiveMetrics(CancellationToken.None);
+        Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
+
+        var live = await collector.CollectLiveMetrics(CancellationToken.None);
+        var regular = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        live.Should().AllSatisfy(m => m.IntervalInMinutes.Should().Be(0));
+        live.Single(m => m.Name == "swap_out").Value.Should().Be(40d);
+        Values(regular)["swap_out"].Should().Be((40, MetricUnit.None));
+    }
+
     private static IFileSystem FileSystem(double totalKb, double freeKb, int swapIn, int swapOut)
     {
         var fileSystem = Substitute.For<IFileSystem>();

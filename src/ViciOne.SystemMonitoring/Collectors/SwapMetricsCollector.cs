@@ -6,9 +6,10 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
-    private readonly Dictionary<string, double> _previousSwapStats = [];
+    private readonly Dictionary<string, double> _intervalBaseline = [];
+    private readonly Dictionary<string, double> _liveBaseline = [];
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
     private readonly Lock _lock = new();
@@ -24,8 +25,8 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
 
             lock (_lock)
             {
-                var values = CalculateValues(currentSwapStats, _previousSwapStats);
-                UpdatePreviousValues(currentSwapStats);
+                var values = CalculateValues(currentSwapStats, _intervalBaseline);
+                UpdateBaseline(_intervalBaseline, currentSwapStats);
 
                 var metricsData = CreateMetricsData(values);
                 List<Metric> metrics = [];
@@ -53,6 +54,25 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error collecting SWAP metrics.", ex);
+        }
+    }
+
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var currentSwapStats = CollectSwapMetrics();
+
+            lock (_lock)
+            {
+                var values = CalculateValues(currentSwapStats, _liveBaseline);
+                UpdateBaseline(_liveBaseline, currentSwapStats);
+                return Task.FromResult(CreateMetricsData(values).ToMetrics(Name, null, 0, m => m.Value).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live SWAP metrics.", ex);
         }
     }
 
@@ -124,11 +144,11 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
     private static bool IsCounter(string name)
         => name.StartsWith("swap", StringComparison.Ordinal);
 
-    private void UpdatePreviousValues(Dictionary<string, double> currentData)
+    private static void UpdateBaseline(Dictionary<string, double> baseline, Dictionary<string, double> currentData)
     {
-        _previousSwapStats.Clear();
+        baseline.Clear();
         foreach (var kv in currentData)
-            _previousSwapStats[kv.Key] = kv.Value;
+            baseline[kv.Key] = kv.Value;
     }
 
     private static List<LastMetricValue> CreateMetricsData(Dictionary<string, double> swapData)
