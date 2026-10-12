@@ -116,10 +116,26 @@ monitoring/my-node/process/1min/processes/Last                [{"Name":"systemd"
 using var subscription = liveMonitoring.Subscribe(TimeSpan.FromSeconds(2), sample => Show(sample.Metrics));
 ```
 
-- Each subscription receives a sample every interval it asked for, from 100 ms to 1 day. Subscriptions with the same interval share one read per sample; each other interval reads on its own.
+- A subscription can name the collectors it needs; then only those are read for it:
+
+  ```csharp
+  using var subscription = liveMonitoring.Subscribe(TimeSpan.FromSeconds(10), ["loadavg", "cpu", "ram"], OnSample);
+  ```
+
+  Names ignore case. A name that is not registered, not enabled in `EnabledMetrics` or not live adds nothing to the sample and
+  is logged once as a warning.
+- Each subscription receives a sample every interval it asked for, from 100 ms to 1 day. Subscriptions with the same interval and the same collectors share one read per sample; any other subscription reads on its own.
 - Disposing the subscription also stops its handler; a handler that throws is logged once and affects no other subscriber.
 - Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output. Shares and rates in a live sample cover the subscription's interval, whatever other subscriptions ask for; a collector that was disabled or failed in the previous read is left out of the next sample instead of covering the gap.
 - The regular values stay the same as without live sampling.
+
+### Always-on consumers
+
+A consumer that runs as long as the process, such as a load indicator, should subscribe with only the collectors it needs and
+the interval its shares and rates should cover. It then neither scans the processes nor reads the disks on every sample, and
+pages that subscribe at a shorter interval do not change its values. The collectors it names must be enabled in
+`EnabledMetrics`, which also publishes them at the regular intervals. If the regular 1-minute values are enough, an `IOutput`
+registered with `AddOutput<T>()` receives them without any extra read.
 
 ## Extending
 

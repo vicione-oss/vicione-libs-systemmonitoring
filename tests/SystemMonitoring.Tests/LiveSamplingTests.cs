@@ -251,6 +251,74 @@ public class MetricsManager_CollectLiveMetrics
     }
 
     [Fact]
+    public async Task Reads_only_the_requested_collectors()
+    {
+        var cpu = LiveCollector("cpu");
+        var process = LiveCollector("process");
+        using MetricsManager metricsManager = new(Options(("cpu", true), ("process", true)), new TestLogger<MetricsManager>(), [cpu, process]);
+        LiveWindow window = new();
+        await Read(metricsManager, window, new HashSet<string>(["cpu"]));
+
+        var metrics = await Read(metricsManager, window, new HashSet<string>(["cpu"]));
+
+        metrics.Should().ContainSingle().Which.Group.Should().Be("cpu");
+        await process.DidNotReceive().CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Matches_the_requested_names_whatever_their_case()
+    {
+        var cpu = LiveCollector("cpu");
+        using MetricsManager metricsManager = new(Options(("cpu", true)), new TestLogger<MetricsManager>(), [cpu]);
+        LiveWindow window = new();
+        await Read(metricsManager, window, new HashSet<string>(["CPU"]));
+
+        var metrics = await Read(metricsManager, window, new HashSet<string>(["CPU"]));
+
+        metrics.Should().ContainSingle().Which.Group.Should().Be("cpu");
+    }
+
+    [Fact]
+    public async Task Skips_a_requested_collector_that_is_disabled()
+    {
+        var cpu = LiveCollector("cpu");
+        using MetricsManager metricsManager = new(Options(("cpu", false)), new TestLogger<MetricsManager>(), [cpu]);
+        LiveWindow window = new();
+        await Read(metricsManager, window, new HashSet<string>(["cpu"]));
+
+        var metrics = await Read(metricsManager, window, new HashSet<string>(["cpu"]));
+
+        metrics.Should().BeEmpty();
+        await cpu.DidNotReceive().CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("cpus", true)]
+    [InlineData("cpu", false)]
+    public async Task Warns_once_about_a_requested_collector_it_does_not_read(string name, bool enabled)
+    {
+        TestLogger<MetricsManager> logger = new();
+        using MetricsManager metricsManager = new(Options(("cpu", enabled)), logger, [LiveCollector("cpu")]);
+        LiveWindow window = new();
+
+        await Read(metricsManager, window, new HashSet<string>([name]));
+        await Read(metricsManager, window, new HashSet<string>([name]));
+
+        logger.Entries.Should().ContainSingle(e => e.LogLevel == LogLevel.Warning).Which.Message.Should().Contain(name);
+    }
+
+    [Fact]
+    public async Task Does_not_warn_about_a_requested_collector_it_reads()
+    {
+        TestLogger<MetricsManager> logger = new();
+        using MetricsManager metricsManager = new(Options(("cpu", true)), logger, [LiveCollector("cpu")]);
+
+        await Read(metricsManager, new(), new HashSet<string>(["CPU"]));
+
+        logger.Entries.Should().NotContain(e => e.LogLevel == LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task Logs_a_failing_collector_once()
     {
         var failing = Substitute.For<ILiveMetricsCollector>();
@@ -280,8 +348,8 @@ public class MetricsManager_CollectLiveMetrics
         metrics.Should().BeEmpty();
     }
 
-    private static Task<List<Metric>> Read(ILiveMetricsSource source, LiveWindow window)
-        => source.CollectLiveMetrics(window, CancellationToken.None);
+    private static Task<List<Metric>> Read(ILiveMetricsSource source, LiveWindow window, IReadOnlySet<string>? collectors = null)
+        => source.CollectLiveMetrics(window, collectors, CancellationToken.None);
 
     private static object UserShare(List<Metric> metrics)
         => metrics.Single(m => m.SubGroup == "total" && m.Name == "user").Value;
@@ -320,7 +388,7 @@ public class LiveMonitoringService_
     {
         var source = Substitute.For<ILiveMetricsSource>();
         using SemaphoreSlim collected = new(0, 10);
-        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
             collected.Release();
             return [new() { Group = "cpu", Name = "value", IntervalInMinutes = 0, Value = 1d, Unit = MetricUnit.None }];
@@ -391,7 +459,7 @@ public class LiveMonitoringService_
         var reads = 0;
         var source = Substitute.For<ILiveMetricsSource>();
         using SemaphoreSlim collected = new(0, 10);
-        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
             collected.Release();
             return Interlocked.Increment(ref reads) == 2
@@ -440,7 +508,7 @@ public class LiveMonitoringService_
         TaskCompletionSource<List<Metric>> inFlight = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using SemaphoreSlim collected = new(0, 10);
         var reads = 0;
-        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
             collected.Release();
             return Interlocked.Increment(ref reads) == 1 ? Task.FromResult<List<Metric>>([]) : inFlight.Task;
@@ -531,11 +599,61 @@ public class LiveMonitoringService_
         (await collected.WaitAsync(200, TestContext.Current.CancellationToken)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Shares_one_read_between_subscriptions_with_the_same_collectors()
+    {
+        var (source, collected) = CountingSource();
+        await using LiveMonitoringService service = new(source, new TestLogger<LiveMonitoringService>(), new FakeTimeProvider());
+
+        using var first = service.Subscribe(2.Seconds(), ["cpu", "ram"], _ => { });
+        using var second = service.Subscribe(2.Seconds(), ["RAM", "cpu"], _ => { });
+
+        (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await collected.WaitAsync(200, TestContext.Current.CancellationToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Reads_other_collectors_with_their_own_window()
+    {
+        var (source, collected) = CountingSource();
+        await using LiveMonitoringService service = new(source, new TestLogger<LiveMonitoringService>(), new FakeTimeProvider());
+
+        using var all = service.Subscribe(2.Seconds(), _ => { });
+        using var some = service.Subscribe(2.Seconds(), ["cpu"], _ => { });
+        (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
+
+        Windows(source).Should().HaveCount(2).And.OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task Hands_the_requested_collectors_to_the_source_whatever_their_case()
+    {
+        var (source, collected) = CountingSource();
+        await using LiveMonitoringService service = new(source, new TestLogger<LiveMonitoringService>(), new FakeTimeProvider());
+
+        using var subscription = service.Subscribe(2.Seconds(), ["CPU"], _ => { });
+        (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
+
+        await source.Received(1).CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Is<IReadOnlySet<string>?>(c => c != null && c.Count == 1 && c.Contains("cpu")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Rejects_an_empty_collector_list()
+    {
+        await using LiveMonitoringService service = new(Substitute.For<ILiveMetricsSource>(), new TestLogger<LiveMonitoringService>());
+
+        var subscribe = () => service.Subscribe(2.Seconds(), [], _ => { });
+
+        subscribe.Should().Throw<ArgumentException>().WithParameterName("collectors");
+    }
+
     private static (ILiveMetricsSource Source, SemaphoreSlim Collected) CountingSource()
     {
         var source = Substitute.For<ILiveMetricsSource>();
         SemaphoreSlim collected = new(0, 10);
-        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        source.CollectLiveMetrics(Arg.Any<LiveWindow>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
             collected.Release();
             return [new() { Group = "cpu", Name = "value", IntervalInMinutes = 0, Value = 1d, Unit = MetricUnit.None }];

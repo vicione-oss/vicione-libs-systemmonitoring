@@ -10,6 +10,7 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
     private readonly List<IMetricsCollector> _collectors = RegisterCollectors(collectors, logger);
     private readonly HashSet<IMetricsCollector> _hasFirstRun = [];
     private readonly HashSet<string> _failedLiveCollectors = [];
+    private readonly HashSet<string> _unreadLiveCollectors = new(StringComparer.OrdinalIgnoreCase);
 
     // Regular and live collection must not run at the same time.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -61,10 +62,11 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
     }
 
     /// <summary>
-    /// Reads the enabled live collectors through <paramref name="window"/>. A collector's first read in a window only sets its
-    /// baseline and is left out, and a collector that is disabled or fails starts over in the window.
+    /// Reads the enabled live collectors through <paramref name="window"/>; all of them, or only those named in
+    /// <paramref name="collectors"/>, whatever their case. A collector's first read in a window only sets its baseline and is
+    /// left out, and a collector that is disabled or fails starts over in the window.
     /// </summary>
-    async Task<List<Metric>> ILiveMetricsSource.CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
+    async Task<List<Metric>> ILiveMetricsSource.CollectLiveMetrics(LiveWindow window, IReadOnlySet<string>? collectors, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _disposed) == 1)
             return [];
@@ -73,9 +75,14 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
         try
         {
             var allMetrics = new List<Metric>();
+            if (collectors is not null)
+                WarnAboutUnreadCollectors(collectors);
 
             foreach (var collector in _collectors.OfType<ILiveMetricsCollector>())
             {
+                if (!IsRequested(collectors, collector))
+                    continue;
+
                 if (CollectorIsNotEnabled(options, collector))
                 {
                     window.Forget(collector);
@@ -103,6 +110,23 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
             _gate.Release();
         }
     }
+
+    /// <summary>
+    /// Logs once per name that a subscription asks for but no enabled live collector answers to, such as a typo.
+    /// </summary>
+    private void WarnAboutUnreadCollectors(IReadOnlySet<string> collectors)
+    {
+        foreach (var name in collectors)
+        {
+            var read = _collectors.OfType<ILiveMetricsCollector>()
+                .Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && !CollectorIsNotEnabled(options, c));
+            if (!read && _unreadLiveCollectors.Add(name))
+                logger.LogUnreadLiveCollector(name);
+        }
+    }
+
+    private static bool IsRequested(IReadOnlySet<string>? collectors, IMetricsCollector collector)
+        => collectors is null || collectors.Any(name => name.Equals(collector.Name, StringComparison.OrdinalIgnoreCase));
 
     private async Task InitializeCollectors(CancellationToken cancellationToken)
     {

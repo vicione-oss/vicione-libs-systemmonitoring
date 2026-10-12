@@ -22,6 +22,18 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
     private readonly List<Group> _groups = [];
 
     public IDisposable Subscribe(TimeSpan interval, Action<LiveSample> onSample)
+        => Subscribe(interval, null, onSample);
+
+    public IDisposable Subscribe(TimeSpan interval, IReadOnlyCollection<string> collectors, Action<LiveSample> onSample)
+    {
+        ArgumentNullException.ThrowIfNull(collectors);
+        if (collectors.Count == 0)
+            throw new ArgumentException("At least one collector is required.", nameof(collectors));
+
+        return Subscribe(interval, collectors.ToHashSet(StringComparer.OrdinalIgnoreCase), onSample);
+    }
+
+    private Subscription Subscribe(TimeSpan interval, HashSet<string>? collectors, Action<LiveSample> onSample)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(interval, s_minimumInterval);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(interval, s_maximumInterval);
@@ -29,10 +41,10 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
 
         lock (_lock)
         {
-            var group = _groups.Find(g => g.Interval == interval);
+            var group = _groups.Find(g => g.Reads(interval, collectors));
             if (group is null)
             {
-                group = new(interval);
+                group = new(interval, collectors);
                 _groups.Add(group);
                 Start(group);
             }
@@ -95,7 +107,7 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
         {
             try
             {
-                return await source.CollectLiveMetrics(group.Window, cancellationToken);
+                return await source.CollectLiveMetrics(group.Window, group.Collectors, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -150,11 +162,17 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
     }
 
     /// <summary>
-    /// The subscriptions that share one interval, and with it one sampling loop and one <see cref="LiveWindow"/>.
+    /// The subscriptions that share one interval and one set of collectors, and with them one sampling loop and one
+    /// <see cref="LiveWindow"/>.
     /// </summary>
-    private sealed class Group(TimeSpan interval)
+    private sealed class Group(TimeSpan interval, HashSet<string>? collectors)
     {
         public TimeSpan Interval { get; } = interval;
+
+        /// <summary>
+        /// The collectors to read, or null for all enabled ones.
+        /// </summary>
+        public HashSet<string>? Collectors { get; } = collectors;
 
         public LiveWindow Window { get; } = new();
 
@@ -163,6 +181,9 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
         public CancellationTokenSource Cancellation { get; } = new();
 
         public Task Sampling { get; set; } = Task.CompletedTask;
+
+        public bool Reads(TimeSpan interval, HashSet<string>? collectors)
+            => Interval == interval && (Collectors is null ? collectors is null : collectors is not null && Collectors.SetEquals(collectors));
     }
 
     private sealed class Subscription(LiveMonitoringService service, Group group, Action<LiveSample> onSample) : IDisposable

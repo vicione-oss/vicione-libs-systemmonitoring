@@ -18,4 +18,7 @@ internal static partial class MetricsManagerLog
 
     [LoggerMessage(3, LogLevel.Debug, "Register collector '{CollectorName}'.")]
     public static partial void LogRegisterCollector(this ILogger<MetricsManager> logger, string collectorName);
+
+    [LoggerMessage(5, LogLevel.Warning, "A live subscription asks for '{CollectorName}', which is not registered, not enabled or cannot be read live; it is left out of the samples.")]
+    public static partial void LogUnreadLiveCollector(this ILogger<MetricsManager> logger, string collectorName);
 }
