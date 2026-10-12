@@ -11,6 +11,7 @@
 - `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
 - `network` collector, `carrier` tells whether a cable is plugged in, and `conduit` names the interface behind a switch port such as `lan1`
 - `cpu` collector, `iowait` is the idle time in which a task waited for I/O, already contained in `idle`
+- `loadavg` collector, `online_cpus` is the number of CPUs the host schedules on, to relate the load to
 
 ### Changed
 

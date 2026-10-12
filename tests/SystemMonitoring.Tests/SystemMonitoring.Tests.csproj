@@ -113,6 +113,9 @@
     <None Update="EdgeS\sys\class\net\lan2\carrier">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="EdgeS\sys\devices\system\cpu\online">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
