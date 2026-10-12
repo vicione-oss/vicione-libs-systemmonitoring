@@ -49,6 +49,28 @@ public class RamMetricsCollector_CollectMetrics
     }
 
     [Fact]
+    public async Task Reports_the_other_values_when_vmstat_cannot_be_read()
+    {
+        var (collector, fileSystem, _) = await CreateCollector();
+        fileSystem.File.ReadAllLines("/proc/vmstat").Returns(_ => throw new UnauthorizedAccessException());
+
+        var metrics = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        metrics.Should().Contain(m => m.Name == "total_memory_usage").And.NotContain(m => m.Name == "page_cache_refaults_per_second");
+    }
+
+    [Fact]
+    public async Task Reports_the_other_values_when_the_refault_counter_is_malformed()
+    {
+        var (collector, fileSystem, _) = await CreateCollector();
+        fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file x"]);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Should().Contain(m => m.Name == "total_memory_usage").And.NotContain(m => m.Name == "page_cache_refaults_per_second");
+    }
+
+    [Fact]
     public async Task Keeps_the_page_cache_refaults_of_the_interval_while_read_live()
     {
         var (collector, fileSystem, timeProvider) = await CreateCollector();

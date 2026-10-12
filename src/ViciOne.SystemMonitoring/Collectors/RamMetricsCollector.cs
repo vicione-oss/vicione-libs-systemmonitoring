@@ -121,7 +121,8 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
     }
 
     /// <summary>
-    /// Null before kernel 5.9, which has no <c>workingset_refault_file</c>.
+    /// Null before kernel 5.9, which has no <c>workingset_refault_file</c>, and when <c>/proc/vmstat</c> cannot be read, so that
+    /// the other RAM values are still reported.
     /// </summary>
     private RefaultReading? ReadRefaults()
     {
@@ -132,13 +133,9 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
             var line = fileSystem.File.ReadAllLines("/proc/vmstat").FirstOrDefault(l => l.StartsWith(Counter, StringComparison.Ordinal));
             return line is null ? null : new(double.Parse(line.AsSpan(Counter.Length), CultureInfo.InvariantCulture), _timeProvider.GetUtcNow());
         }
-        catch (UnauthorizedAccessException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
         {
-            throw new InvalidOperationException("Permission error reading page cache refaults.", ex);
-        }
-        catch (IOException ex)
-        {
-            throw new InvalidOperationException("I/O error reading page cache refaults.", ex);
+            return null;
         }
     }
 
