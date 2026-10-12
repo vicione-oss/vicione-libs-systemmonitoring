@@ -211,6 +211,33 @@ public class ThermalZoneMetricsCollector_CollectMetrics
     }
 
     [Fact]
+    public async Task Keeps_the_zone_numbers_when_the_type_of_a_zone_cannot_be_read_once()
+    {
+        var fileSystem = Zones(Zone0, $"{ThermalDirectory}/thermal_zone1");
+        Zone(fileSystem, Zone0, "acpitz", "40000");
+        Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "acpitz", "45000");
+        ThermalZoneMetricsCollector collector = new(fileSystem);
+        await collector.CollectLiveMetrics(CancellationToken.None);
+        fileSystem.File.ReadAllText($"{Zone0}/type").Throws(new IOException("Input/output error"));
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Select(m => m.SubGroup).Should().Equal("acpitz_0", "acpitz_1");
+    }
+
+    [Fact]
+    public async Task Replaces_characters_that_would_break_the_topic()
+    {
+        var fileSystem = Zones(Zone0);
+        Zone(fileSystem, Zone0, "soc/gpu+#", "40000");
+        ThermalZoneMetricsCollector collector = new(fileSystem);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Select(m => m.SubGroup).Should().Equal("soc\\gpu__");
+    }
+
+    [Fact]
     public async Task Returns_nothing_without_thermal_zones()
     {
         ThermalZoneMetricsCollector collector = new(Substitute.For<IFileSystem>());

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
@@ -24,6 +25,11 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
 
     private readonly Lock _lock = new();
     private readonly AggregationBuffers _buffers = new("thermal_zones");
+
+    /// <summary>
+    /// The last type read per zone number; regular and live readings may run at the same time.
+    /// </summary>
+    private readonly ConcurrentDictionary<int, string> _types = new();
 
     public int IntervalInMinutes { get; } = 1;
     public string Name => "thermal_zones";
@@ -74,7 +80,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
                 .Select(path => (Path: path, Number: Number(Path.GetFileName(path), "thermal_zone", "")))
                 .Where(zone => zone.Number is not null)
                 .OrderBy(zone => zone.Number)
-                .Select(zone => (zone.Path, zone.Number, Type: ReadType(zone.Path)))
+                .Select(zone => (zone.Path, Number: zone.Number!.Value, Type: TypeOf(zone.Path, zone.Number.Value)))
                 .ToList();
 
             Dictionary<string, List<LastMetricValue>> valuesBySubGroup = [];
@@ -84,7 +90,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
                     continue;
 
                 var name = zones.Count(z => z.Type == type) > 1 ? $"{type}_{number}" : type;
-                valuesBySubGroup[name] = values;
+                valuesBySubGroup[ToSubGroup(name)] = values;
             }
 
             return valuesBySubGroup;
@@ -98,6 +104,25 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
             throw new InvalidOperationException("I/O error reading the thermal zones.", ex);
         }
     }
+
+    /// <summary>
+    /// The type of the zone, or the one read before when it cannot be read now, so that a zone whose type fails once does not
+    /// rename the others of its type; null when it was never read.
+    /// </summary>
+    private string? TypeOf(string zone, int number)
+    {
+        if (ReadType(zone) is { } type)
+            return _types[number] = type;
+
+        return _types.GetValueOrDefault(number);
+    }
+
+    /// <summary>
+    /// The zone type as a subgroup, which becomes a level of the MQTT topic: <c>/</c> is replaced by <c>\</c> as for a mount
+    /// point, and the wildcards <c>+</c> and <c>#</c> by <c>_</c>.
+    /// </summary>
+    private static string ToSubGroup(string name)
+        => name.Replace('/', '\\').Replace('+', '_').Replace('#', '_');
 
     /// <summary>
     /// Null for a zone that went away since the directory was listed or whose type may not be read.
