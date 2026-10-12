@@ -9,7 +9,7 @@ using ViciOne.SystemMonitoring.Metrics;
 
 namespace ViciOne.SystemMonitoring;
 
-[SuppressMessage("Interoperability", "CA1416:Plattformkompatibilität überprüfen")]
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
 public class DiskIoMetricsCollector_CollectMetrics
 {
     [Fact]

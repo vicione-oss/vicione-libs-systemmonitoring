@@ -6,7 +6,7 @@ using ViciOne.SystemMonitoring.Collectors;
 
 namespace ViciOne.SystemMonitoring;
 
-[SuppressMessage("Interoperability", "CA1416:Plattformkompatibilität überprüfen")]
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
 public class CpuFrequencyMetricsCollector_CollectMetrics
 {
     private const string CpuDirectory = "/sys/devices/system/cpu";
