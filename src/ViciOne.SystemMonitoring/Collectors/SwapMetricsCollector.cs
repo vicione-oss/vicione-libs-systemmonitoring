@@ -10,7 +10,6 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem, TimeProvider? t
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Baseline _intervalBaseline = new();
-    private readonly Baseline _liveBaseline = new();
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
     private readonly Lock _lock = new();
@@ -67,17 +66,18 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem, TimeProvider? t
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
             var currentSwapStats = CollectSwapMetrics();
             var now = _timeProvider.GetUtcNow();
+            var baseline = window.Baseline<Baseline>(this);
 
             lock (_lock)
             {
-                var values = CalculateValues(currentSwapStats, now, _liveBaseline);
-                _liveBaseline.Update(currentSwapStats, now);
+                var values = CalculateValues(currentSwapStats, now, baseline);
+                baseline.Update(currentSwapStats, now);
                 return Task.FromResult(CreateMetricsData(values).ToMetrics(Name, null, 0, m => m.Value).ToList());
             }
         }

@@ -7,9 +7,10 @@ namespace ViciOne.SystemMonitoring.Collectors;
 /// </summary>
 /// <remarks>
 /// Live metrics have no interval (<see cref="Metric.IntervalInMinutes"/> is 0) and are never aggregated. Values computed from
-/// counters, such as CPU time, cover the time since the previous live call.
+/// counters, such as CPU time, cover the time since the previous call with the same <see cref="LiveWindow"/>; keep their baseline
+/// in <see cref="LiveWindow.Baseline{T}"/>.
 /// </remarks>
 public interface ILiveMetricsCollector : IMetricsCollector
 {
-    Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken);
+    Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken);
 }

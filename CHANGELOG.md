@@ -4,8 +4,8 @@
 
 ### Added
 
-- `ILiveMonitoring`, reads the enabled collectors every few seconds while subscribed, without changing the regular values
-- `ILiveMetricsCollector`, the extension point for custom collectors that can also be read live
+- `ILiveMonitoring`, reads the enabled collectors every few seconds while subscribed, without changing the regular values; shares and rates in a sample cover the subscription's own interval
+- `ILiveMetricsCollector`, the extension point for custom collectors that can also be read live; they keep the baseline for values computed from counters in the `LiveWindow` they are handed
 - `LinuxProcessInfo.StartTime`, when the process started
 - `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
 - `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation

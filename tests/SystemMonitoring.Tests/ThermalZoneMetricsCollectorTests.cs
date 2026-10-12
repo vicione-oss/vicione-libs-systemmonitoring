@@ -41,7 +41,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{Zone0}/cdev0/cur_state").Returns("1\n");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Single(m => m.Name == "throttling").Value.Should().Be(100d);
     }
@@ -55,7 +55,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         CoolingDevice(fileSystem, Zone0, 1, trip: "2", state: "3", maximum: "4");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Single(m => m.Name == "throttling").Value.Should().Be(0d);
     }
@@ -67,7 +67,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{Zone0}/cdev0/max_state").Returns("0\n");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.Name).Should().BeEquivalentTo(["temperature", "passive_trip", "critical_trip"]);
     }
@@ -79,7 +79,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Trip(fileSystem, Zone0, 2, "passive", "-274000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Single(m => m.Name == "passive_trip").Value.Should().Be(85d);
     }
@@ -92,7 +92,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Trip(fileSystem, Zone0, 0, "critical", "110000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.Name).Should().BeEquivalentTo(["temperature", "critical_trip"]);
     }
@@ -105,7 +105,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "gpu-thermal", "41000", mode: "disabled");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -119,7 +119,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{ThermalDirectory}/thermal_zone1/temp").Throws(new IOException("No data available"));
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -133,7 +133,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{ThermalDirectory}/thermal_zone1/temp").Throws(new UnauthorizedAccessException());
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -147,7 +147,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{zone1}/type").Throws(new UnauthorizedAccessException());
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -165,7 +165,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{zone1}/cdev0/cur_state").Throws(new IOException("Input/output error"));
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -179,7 +179,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{zone1}/type").Throws(new FileNotFoundException());
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
     }
@@ -192,7 +192,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "acpitz", "45000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().Equal("acpitz_1");
     }
@@ -205,7 +205,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "acpitz", "45000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => (m.SubGroup, (double)m.Value)).Should().Equal(("acpitz_0", 40d), ("acpitz_1", 45d));
     }
@@ -217,10 +217,10 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Zone(fileSystem, Zone0, "acpitz", "40000");
         Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "acpitz", "45000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        await collector.CollectLiveMetrics(new(), CancellationToken.None);
         fileSystem.File.ReadAllText($"{Zone0}/type").Throws(new IOException("Input/output error"));
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().Equal("acpitz_0", "acpitz_1");
     }
@@ -232,7 +232,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
         Zone(fileSystem, Zone0, "soc/gpu+#", "40000");
         ThermalZoneMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Should().Equal("soc\\gpu__");
     }
@@ -252,7 +252,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
     {
         ThermalZoneMetricsCollector collector = new(EdgeS());
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Should().HaveCount(4).And.AllSatisfy(m => m.IntervalInMinutes.Should().Be(0));
     }

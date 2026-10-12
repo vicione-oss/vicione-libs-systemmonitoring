@@ -41,7 +41,7 @@ public class CpuFrequencyMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{CpuDirectory}/cpu1/cpufreq/scaling_max_freq").Returns("800000\n");
         CpuFrequencyMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Single(m => m.SubGroup == "core1" && m.Name == "limit").Value.Should().Be(800d);
         metrics.Single(m => m.SubGroup == "total" && m.Name == "limit_share").Value.Should().Be(800 / 1400d * 100);
@@ -55,7 +55,7 @@ public class CpuFrequencyMetricsCollector_CollectMetrics
         fileSystem.File.ReadAllText($"{CpuDirectory}/cpu1/cpufreq/cpuinfo_max_freq").Returns("1000000\n");
         CpuFrequencyMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Single(m => m.SubGroup == "total" && m.Name == "limit_share").Value.Should().Be(100d);
         metrics.Single(m => m.SubGroup == "total" && m.Name == "share_of_maximum").Value.Should().Be(((1000 / 1400d * 100) + 100) / 2);
@@ -69,7 +69,7 @@ public class CpuFrequencyMetricsCollector_CollectMetrics
         fileSystem.Directory.GetDirectories(CpuDirectory, "cpu*").Returns([$"{CpuDirectory}/cpu0"]);
         CpuFrequencyMetricsCollector collector = new(fileSystem);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Should().BeEmpty();
     }
@@ -79,7 +79,7 @@ public class CpuFrequencyMetricsCollector_CollectMetrics
     {
         CpuFrequencyMetricsCollector collector = new(EdgeS(cpu0Khz: "1400000", cpu1Khz: "1400000"));
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Should().HaveCount(10).And.AllSatisfy(m => m.IntervalInMinutes.Should().Be(0));
     }

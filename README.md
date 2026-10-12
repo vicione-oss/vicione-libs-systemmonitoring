@@ -116,16 +116,17 @@ monitoring/my-node/process/1min/processes/Last                [{"Name":"systemd"
 using var subscription = liveMonitoring.Subscribe(TimeSpan.FromSeconds(2), sample => Show(sample.Metrics));
 ```
 
-- With several subscriptions, the shortest interval wins and every subscriber receives every sample.
+- Each subscription receives a sample every interval it asked for, from 100 ms to 1 day. Subscriptions with the same interval share one read per sample; each other interval reads on its own.
 - Disposing the subscription also stops its handler; a handler that throws is logged once and affects no other subscriber.
-- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output. Shares and rates in a live sample cover the time since the previous live sample, so they follow the shortest subscribed interval.
+- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output. Shares and rates in a live sample cover the subscription's interval, whatever other subscriptions ask for; a collector that was disabled or failed in the previous read is left out of the next sample instead of covering the gap.
 - The regular values stay the same as without live sampling.
 
 ## Extending
 
 - **Collector:** implement `IScheduledMetricsCollector` (interval 1, 5 or 15 minutes) or `IOnetimeMetricsCollector`. Add
-  `IPrepareMetricsCollector` to take a first reading at startup and `ILiveMetricsCollector` to support live sampling.
-  Register it with `AddCollector<T>()`.
+  `IPrepareMetricsCollector` to take a first reading at startup and `ILiveMetricsCollector` to support live sampling; a
+  live collector keeps the baseline for values computed from counters in the `LiveWindow` it is handed. Register it with
+  `AddCollector<T>()`.
 - **Output:** implement `IOutput` (`Connect`, `Publish`, `Disconnect`) and register it with `AddOutput<T>()`.
 
 ## Contributing

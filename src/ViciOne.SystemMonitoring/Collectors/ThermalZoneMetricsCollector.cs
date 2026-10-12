@@ -53,7 +53,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {

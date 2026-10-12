@@ -18,12 +18,33 @@ public class NetworkMetricsCollector_CollectLiveMetrics
         Dev(fileSystem, 1_000_000);
         await collector.PrepareMetrics(CancellationToken.None);
         Dev(fileSystem, 1_300_000);
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        await collector.CollectLiveMetrics(new(), CancellationToken.None);
         Dev(fileSystem, 1_600_000);
 
         var metrics = await collector.CollectMetrics(1, DateTime.UtcNow, CancellationToken.None);
 
         metrics.Single(m => m.SubGroup == "wlan0" && m.Name == "rx_bytes").Value.Should().Be(600_000d);
+    }
+
+    [Fact]
+    public async Task Reports_the_bytes_since_the_previous_read_of_the_same_window()
+    {
+        var fileSystem = Substitute.For<IFileSystem>();
+        NetworkMetricsCollector collector = new(fileSystem, Substitute.For<ILogger<NetworkMetricsCollector>>());
+        LiveWindow often = new();
+        LiveWindow seldom = new();
+        Dev(fileSystem, 1_000_000);
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+        Dev(fileSystem, 1_300_000);
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        Dev(fileSystem, 1_600_000);
+
+        var oftenMetrics = await collector.CollectLiveMetrics(often, CancellationToken.None);
+        var seldomMetrics = await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+
+        oftenMetrics.Single(m => m.SubGroup == "wlan0" && m.Name == "rx_bytes").Value.Should().Be(300_000d);
+        seldomMetrics.Single(m => m.SubGroup == "wlan0" && m.Name == "rx_bytes").Value.Should().Be(600_000d);
     }
 
     private static void Dev(IFileSystem fileSystem, long rx)

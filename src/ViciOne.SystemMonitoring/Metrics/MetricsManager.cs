@@ -60,7 +60,11 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
         }
     }
 
-    public async Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads the enabled live collectors through <paramref name="window"/>. A collector's first read in a window only sets its
+    /// baseline and is left out, and a collector that is disabled or fails starts over in the window.
+    /// </summary>
+    async Task<List<Metric>> ILiveMetricsSource.CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _disposed) == 1)
             return [];
@@ -73,14 +77,20 @@ public sealed class MetricsManager(IOptionsMonitor<MonitoringConfig> options, IL
             foreach (var collector in _collectors.OfType<ILiveMetricsCollector>())
             {
                 if (CollectorIsNotEnabled(options, collector))
+                {
+                    window.Forget(collector);
                     continue;
+                }
 
                 try
                 {
-                    allMetrics.AddRange(await collector.CollectLiveMetrics(cancellationToken));
+                    var metrics = await collector.CollectLiveMetrics(window, cancellationToken);
+                    if (window.Read(collector))
+                        allMetrics.AddRange(metrics);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    window.Forget(collector);
                     if (_failedLiveCollectors.Add(collector.Name))
                         logger.LogErrorCollectingLiveMetrics(collector.Name, ex);
                 }

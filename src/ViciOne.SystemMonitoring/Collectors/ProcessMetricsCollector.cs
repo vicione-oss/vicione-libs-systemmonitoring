@@ -10,7 +10,6 @@ namespace ViciOne.SystemMonitoring.Collectors;
 public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> logger, IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector, ILiveMetricsCollector
 {
     private readonly CpuTimes _intervalBaseline = new();
-    private readonly CpuTimes _liveBaseline = new();
 
     public int IntervalInMinutes { get; } = 1;
     public string Name => "process";
@@ -22,7 +21,6 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             var totalCoreTimeNow = GetTotalCoreTime();
             _intervalBaseline.TotalCoreTime = totalCoreTimeNow;
             GetAllProcesses(totalCoreTimeNow, _intervalBaseline);
-            _liveBaseline.CopyFrom(_intervalBaseline);
         }
         catch (Exception ex)
         {
@@ -44,11 +42,11 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
-            return Task.FromResult(Collect(_liveBaseline, 0));
+            return Task.FromResult(Collect(window.Baseline<CpuTimes>(this), 0));
         }
         catch (Exception ex)
         {
@@ -322,15 +320,6 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         public Dictionary<int, long> ProcessTimes { get; } = [];
 
         public long TotalCoreTime { get; set; }
-
-        public void CopyFrom(CpuTimes other)
-        {
-            ProcessTimes.Clear();
-            foreach (var (pid, time) in other.ProcessTimes)
-                ProcessTimes[pid] = time;
-
-            TotalCoreTime = other.TotalCoreTime;
-        }
 
         public void Forget(HashSet<int> runningPids)
         {

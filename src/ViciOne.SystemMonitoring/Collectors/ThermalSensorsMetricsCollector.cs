@@ -54,7 +54,7 @@ public sealed class ThermalSensorsMetricsCollector(IOptionsMonitor<MonitoringCon
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {

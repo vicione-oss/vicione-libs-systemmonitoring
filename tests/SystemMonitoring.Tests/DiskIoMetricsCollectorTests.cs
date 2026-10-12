@@ -43,10 +43,13 @@ public class DiskIoMetricsCollector_CollectMetrics
         Sysfs(fileSystem, disks: ["sda", "sdaa", "nvme0n1"], partitions: ["sda1", "sdaa1", "nvme0n1p1"]);
         fileSystem.File.ReadAllLines("/proc/diskstats").Returns(
             [.. names.Select((name, i) => $"   8      {i} {name} 10 0 100 0 20 0 200 0 0 30 0 0 0 0 0 0 0")]);
-        DiskIoMetricsCollector collector = new(fileSystem);
-        await collector.PrepareMetrics(CancellationToken.None);
+        FakeTimeProvider timeProvider = new();
+        DiskIoMetricsCollector collector = new(fileSystem, timeProvider);
+        LiveWindow window = new();
+        await collector.CollectLiveMetrics(window, CancellationToken.None);
+        timeProvider.Advance(1.Seconds());
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(window, CancellationToken.None);
 
         metrics.Select(m => m.SubGroup).Distinct().Should().BeEquivalentTo(["sda", "sdaa", "nvme0n1"]);
     }
@@ -55,7 +58,7 @@ public class DiskIoMetricsCollector_CollectMetrics
     public async Task Keeps_the_regular_value_while_read_live()
     {
         var (collector, timeProvider) = await PreparedCollector();
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        await collector.CollectLiveMetrics(new(), CancellationToken.None);
         timeProvider.Advance(1.Seconds());
 
         var metrics = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
@@ -66,9 +69,10 @@ public class DiskIoMetricsCollector_CollectMetrics
     [Fact]
     public async Task Returns_live_metrics_without_interval()
     {
-        var (collector, _) = await PreparedCollector();
+        LiveWindow window = new();
+        var (collector, _) = await PreparedCollector(window);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(window, CancellationToken.None);
 
         metrics.Should().NotBeEmpty().And.AllSatisfy(m => m.IntervalInMinutes.Should().Be(0));
     }
@@ -84,7 +88,34 @@ public class DiskIoMetricsCollector_CollectMetrics
             .And.Contain(m => m.Name == "busy" && ((AggregatedMetricValue)m.Value).Max == 1);
     }
 
-    private static async Task<(DiskIoMetricsCollector Collector, FakeTimeProvider TimeProvider)> PreparedCollector()
+    [Fact]
+    public async Task Reports_the_write_throughput_over_the_time_of_each_window()
+    {
+        var fileSystem = Substitute.For<IFileSystem>();
+        Sysfs(fileSystem, disks: ["sda"], partitions: []);
+        FakeTimeProvider timeProvider = new();
+        DiskIoMetricsCollector collector = new(fileSystem, timeProvider);
+        LiveWindow often = new();
+        LiveWindow seldom = new();
+        Diskstats(fileSystem, sectorsWritten: 200);
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+        timeProvider.Advance(8.Seconds());
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        Diskstats(fileSystem, sectorsWritten: 1200);
+        timeProvider.Advance(2.Seconds());
+
+        var oftenMetrics = await collector.CollectLiveMetrics(often, CancellationToken.None);
+        var seldomMetrics = await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+
+        oftenMetrics.Single(m => m.Name == "write_bytes_per_second").Value.Should().Be(1000 * 512 / 2d);
+        seldomMetrics.Single(m => m.Name == "write_bytes_per_second").Value.Should().Be(1000 * 512 / 10d);
+    }
+
+    private static void Diskstats(IFileSystem fileSystem, int sectorsWritten)
+        => fileSystem.File.ReadAllLines("/proc/diskstats").Returns([$"   8       0 sda 10 0 100 0 20 0 {sectorsWritten} 0 0 30 0 0 0 0 0 0 0"]);
+
+    private static async Task<(DiskIoMetricsCollector Collector, FakeTimeProvider TimeProvider)> PreparedCollector(LiveWindow? liveWindow = null)
     {
         var first = await File.ReadAllLinesAsync("./EdgeS/proc/diskstats", TestContext.Current.CancellationToken);
         var second = await File.ReadAllLinesAsync("./EdgeS/proc/diskstats2", TestContext.Current.CancellationToken);
@@ -94,6 +125,8 @@ public class DiskIoMetricsCollector_CollectMetrics
         FakeTimeProvider timeProvider = new();
         DiskIoMetricsCollector collector = new(fileSystem, timeProvider);
         await collector.PrepareMetrics(CancellationToken.None);
+        if (liveWindow is not null)
+            await collector.CollectLiveMetrics(liveWindow, CancellationToken.None);
 
         fileSystem.File.ReadAllLines("/proc/diskstats").Returns(second);
         timeProvider.Advance(60.Seconds());

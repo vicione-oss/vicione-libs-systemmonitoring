@@ -64,13 +64,36 @@ public class SwapMetricsCollector_CollectMetrics
         var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
         FakeTimeProvider timeProvider = new();
         SwapMetricsCollector collector = new(fileSystem, timeProvider);
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        LiveWindow window = new();
+        await collector.CollectLiveMetrics(window, CancellationToken.None);
         Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
         timeProvider.Advance(2.Seconds());
 
-        var live = await collector.CollectLiveMetrics(CancellationToken.None);
+        var live = await collector.CollectLiveMetrics(window, CancellationToken.None);
 
         live.Single(m => m.Name == "swap_out_per_second").Value.Should().Be(20d);
+    }
+
+    [Fact]
+    public async Task Reports_the_pages_swapped_per_second_over_the_time_of_each_window()
+    {
+        var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
+        FakeTimeProvider timeProvider = new();
+        SwapMetricsCollector collector = new(fileSystem, timeProvider);
+        LiveWindow often = new();
+        LiveWindow seldom = new();
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+        timeProvider.Advance(8.Seconds());
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
+        timeProvider.Advance(2.Seconds());
+
+        var oftenMetrics = await collector.CollectLiveMetrics(often, CancellationToken.None);
+        var seldomMetrics = await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+
+        oftenMetrics.Single(m => m.Name == "swap_out_per_second").Value.Should().Be(20d);
+        seldomMetrics.Single(m => m.Name == "swap_out_per_second").Value.Should().Be(4d);
     }
 
     [Fact]
@@ -78,11 +101,12 @@ public class SwapMetricsCollector_CollectMetrics
     {
         var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
         SwapMetricsCollector collector = new(fileSystem);
+        LiveWindow window = new();
         await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        await collector.CollectLiveMetrics(window, CancellationToken.None);
         Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
 
-        var live = await collector.CollectLiveMetrics(CancellationToken.None);
+        var live = await collector.CollectLiveMetrics(window, CancellationToken.None);
         var regular = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
 
         live.Should().AllSatisfy(m => m.IntervalInMinutes.Should().Be(0));

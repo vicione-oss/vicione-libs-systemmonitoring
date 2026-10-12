@@ -14,7 +14,6 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
     private readonly Lock _lock = new();
 
     private RefaultReading? _intervalBaseline;
-    private RefaultReading? _liveBaseline;
 
     public int IntervalInMinutes { get; } = 1;
     public string Name => "ram";
@@ -68,19 +67,20 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
             var ramData = CollectRamMetrics();
             var refaults = ReadRefaults();
+            var baseline = window.Baseline<RefaultBaseline>(this);
 
             lock (_lock)
             {
                 var metricsData = CreateMetricsData(ramData);
                 metricsData.AddRange(CalculateUsage(ramData));
-                metricsData.AddRange(RefaultsPerSecond(_liveBaseline, refaults));
-                _liveBaseline = refaults;
+                metricsData.AddRange(RefaultsPerSecond(baseline.Reading, refaults));
+                baseline.Reading = refaults;
                 return Task.FromResult(metricsData.ToMetrics(Name, null, 0, m => m.Value).ToList());
             }
         }
@@ -204,4 +204,12 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
     }
 
     private sealed record RefaultReading(double Refaults, DateTimeOffset Timestamp);
+
+    /// <summary>
+    /// The previous refault reading of a live window.
+    /// </summary>
+    private sealed class RefaultBaseline
+    {
+        public RefaultReading? Reading { get; set; }
+    }
 }

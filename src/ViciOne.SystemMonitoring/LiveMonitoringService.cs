@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ViciOne.SystemMonitoring.Collectors;
 using ViciOne.SystemMonitoring.Metrics;
 
 namespace ViciOne.SystemMonitoring;
@@ -11,95 +12,82 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
     /// </summary>
     private static readonly TimeSpan s_minimumInterval = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>
+    /// The longest interval <see cref="Subscribe"/> accepts.
+    /// </summary>
+    private static readonly TimeSpan s_maximumInterval = TimeSpan.FromDays(1);
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Lock _lock = new();
-    private readonly List<Subscription> _subscriptions = [];
-
-    private CancellationTokenSource? _cancellation;
-    private Task? _sampling;
-    private TimeSpan _interval;
+    private readonly List<Group> _groups = [];
 
     public IDisposable Subscribe(TimeSpan interval, Action<LiveSample> onSample)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(interval, s_minimumInterval);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(interval, s_maximumInterval);
         ArgumentNullException.ThrowIfNull(onSample);
 
-        var subscription = new Subscription(this, interval, onSample);
         lock (_lock)
         {
-            _subscriptions.Add(subscription);
-            Restart();
-        }
+            var group = _groups.Find(g => g.Interval == interval);
+            if (group is null)
+            {
+                group = new(interval);
+                _groups.Add(group);
+                Start(group);
+            }
 
-        return subscription;
+            Subscription subscription = new(this, group, onSample);
+            group.Subscriptions.Add(subscription);
+            return subscription;
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
-        Task? sampling;
+        Task[] stopped;
         lock (_lock)
         {
-            _subscriptions.Clear();
-            sampling = _sampling;
-            _cancellation?.Cancel();
+            // A read still in flight then hands its sample to nobody.
+            foreach (var group in _groups)
+                group.Subscriptions.Clear();
+
+            stopped = [.. _groups.Select(Stop)];
+            _groups.Clear();
         }
 
-        if (sampling is not null)
-            await sampling.ConfigureAwait(false);
-
-        _cancellation?.Dispose();
+        await Task.WhenAll(stopped).ConfigureAwait(false);
     }
 
     private void Unsubscribe(Subscription subscription)
     {
         lock (_lock)
         {
-            if (_subscriptions.Remove(subscription))
-                Restart();
+            var group = subscription.Group;
+            if (!group.Subscriptions.Remove(subscription) || group.Subscriptions.Count > 0 || !_groups.Remove(group))
+                return;
+
+            _ = Stop(group);
         }
     }
 
-    /// <summary>
-    /// Runs the sampling at the shortest subscribed interval, or stops it without subscribers.
-    /// </summary>
-    private void Restart()
+    private void Start(Group group)
     {
-        var interval = _subscriptions.Count == 0 ? TimeSpan.Zero : _subscriptions.Min(s => s.Interval);
-        if (interval == _interval && (_sampling is not null) == (interval > TimeSpan.Zero))
-            return;
-
-        _ = Stop();
-        _interval = interval;
-        if (interval <= TimeSpan.Zero)
-            return;
-
-        var cancellation = new CancellationTokenSource();
-        _cancellation = cancellation;
-
         // Keeps the caller's culture and context, such as a UI circuit's, out of the loop.
         using (ExecutionContext.SuppressFlow())
-            _sampling = Task.Run(() => Sample(interval, cancellation.Token));
+            group.Sampling = Task.Run(() => Sample(group, group.Cancellation.Token));
     }
 
-    private Task? Stop()
+    private static Task Stop(Group group)
     {
-        var sampling = _sampling;
-        var cancellation = _cancellation;
-        _sampling = null;
-        _cancellation = null;
-        _interval = TimeSpan.Zero;
-
-        if (cancellation is null)
-            return sampling;
-
-        cancellation.Cancel();
-        return sampling?.ContinueWith(_ => cancellation.Dispose(), TaskScheduler.Default);
+        group.Cancellation.Cancel();
+        return group.Sampling.ContinueWith(_ => group.Cancellation.Dispose(), TaskScheduler.Default);
     }
 
     /// <summary>
-    /// Runs until the last subscription is disposed; a failed read is logged once and skips that tick only.
+    /// Runs until the last subscription of the group is disposed; a failed read is logged once and skips that tick only.
     /// </summary>
-    private async Task Sample(TimeSpan interval, CancellationToken cancellationToken)
+    private async Task Sample(Group group, CancellationToken cancellationToken)
     {
         var readFailed = false;
 
@@ -107,7 +95,7 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
         {
             try
             {
-                return await source.CollectLiveMetrics(cancellationToken);
+                return await source.CollectLiveMetrics(group.Window, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -121,31 +109,31 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
 
         try
         {
-            // The first read only moves the live baselines to now.
+            // The first read only sets the baselines of the window and returns nothing.
             await Read();
 
-            using var timer = new PeriodicTimer(interval, _timeProvider);
+            using var timer = new PeriodicTimer(group.Interval, _timeProvider);
             HashSet<Subscription> failedSubscribers = [];
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
                 if (await Read() is { } metrics)
-                    Publish(new(metrics, _timeProvider.GetUtcNow()), failedSubscribers);
+                    Publish(group, new(metrics, _timeProvider.GetUtcNow()), failedSubscribers);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // The last subscription was disposed.
+            // The last subscription of the group was disposed.
         }
     }
 
     /// <summary>
     /// Hands the sample to each subscriber on its own; a failing subscriber is logged once and stops neither the others nor the loop.
     /// </summary>
-    private void Publish(LiveSample sample, HashSet<Subscription> failedSubscribers)
+    private void Publish(Group group, LiveSample sample, HashSet<Subscription> failedSubscribers)
     {
         Subscription[] subscribers;
         lock (_lock)
-            subscribers = [.. _subscriptions];
+            subscribers = [.. group.Subscriptions];
 
         foreach (var subscriber in subscribers)
         {
@@ -161,11 +149,27 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
         }
     }
 
-    private sealed class Subscription(LiveMonitoringService service, TimeSpan interval, Action<LiveSample> onSample) : IDisposable
+    /// <summary>
+    /// The subscriptions that share one interval, and with it one sampling loop and one <see cref="LiveWindow"/>.
+    /// </summary>
+    private sealed class Group(TimeSpan interval)
+    {
+        public TimeSpan Interval { get; } = interval;
+
+        public LiveWindow Window { get; } = new();
+
+        public List<Subscription> Subscriptions { get; } = [];
+
+        public CancellationTokenSource Cancellation { get; } = new();
+
+        public Task Sampling { get; set; } = Task.CompletedTask;
+    }
+
+    private sealed class Subscription(LiveMonitoringService service, Group group, Action<LiveSample> onSample) : IDisposable
     {
         private int _disposed;
 
-        public TimeSpan Interval { get; } = interval;
+        public Group Group { get; } = group;
 
         /// <summary>
         /// Skips a sample that was taken before the handle was disposed but handed over after.

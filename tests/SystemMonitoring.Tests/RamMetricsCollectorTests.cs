@@ -78,7 +78,7 @@ public class RamMetricsCollector_CollectMetrics
         var (collector, fileSystem, _) = await CreateCollector();
         fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file x"]);
 
-        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+        var metrics = await collector.CollectLiveMetrics(new(), CancellationToken.None);
 
         metrics.Should().Contain(m => m.Name == "total_memory_usage").And.NotContain(m => m.Name == "page_cache_refaults_per_second");
     }
@@ -87,17 +87,39 @@ public class RamMetricsCollector_CollectMetrics
     public async Task Keeps_the_page_cache_refaults_of_the_interval_while_read_live()
     {
         var (collector, fileSystem, timeProvider) = await CreateCollector();
+        LiveWindow window = new();
         await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
-        await collector.CollectLiveMetrics(CancellationToken.None);
+        await collector.CollectLiveMetrics(window, CancellationToken.None);
         fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file 5176"]);
         timeProvider.Advance(2.Seconds());
 
-        var live = await collector.CollectLiveMetrics(CancellationToken.None);
+        var live = await collector.CollectLiveMetrics(window, CancellationToken.None);
         timeProvider.Advance(58.Seconds());
         var regular = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
 
         RefaultsPerSecond(live, interval: 0).Should().Be(300d);
         RefaultsPerSecond(regular, interval: 1).Should().Be(10d);
+    }
+
+    [Fact]
+    public async Task Reports_the_page_cache_refaults_per_second_over_the_time_of_each_window()
+    {
+        var (collector, fileSystem, timeProvider) = await CreateCollector();
+        LiveWindow often = new();
+        LiveWindow seldom = new();
+        fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file 1000"]);
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+        timeProvider.Advance(8.Seconds());
+        await collector.CollectLiveMetrics(often, CancellationToken.None);
+        fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file 1600"]);
+        timeProvider.Advance(2.Seconds());
+
+        var oftenMetrics = await collector.CollectLiveMetrics(often, CancellationToken.None);
+        var seldomMetrics = await collector.CollectLiveMetrics(seldom, CancellationToken.None);
+
+        RefaultsPerSecond(oftenMetrics, interval: 0).Should().Be(300d);
+        RefaultsPerSecond(seldomMetrics, interval: 0).Should().Be(60d);
     }
 
     private static async Task<(RamMetricsCollector Collector, IFileSystem FileSystem, FakeTimeProvider TimeProvider)> CreateCollector()

@@ -24,7 +24,6 @@ public sealed class DiskIoMetricsCollector(IFileSystem fileSystem, TimeProvider?
     private readonly Lock _lock = new();
 
     private readonly Dictionary<string, Reading> _intervalBaseline = [];
-    private readonly Dictionary<string, Reading> _liveBaseline = [];
     private readonly AggregationBuffers _buffers = new("disk_io");
 
     public int IntervalInMinutes { get; } = 1;
@@ -39,10 +38,7 @@ public sealed class DiskIoMetricsCollector(IFileSystem fileSystem, TimeProvider?
             lock (_lock)
             {
                 foreach (var (device, reading) in readings)
-                {
                     _intervalBaseline[device] = reading;
-                    _liveBaseline[device] = reading;
-                }
             }
         }
         catch (Exception ex)
@@ -73,16 +69,17 @@ public sealed class DiskIoMetricsCollector(IFileSystem fileSystem, TimeProvider?
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
             var readings = ReadDevices();
+            var baseline = window.Baseline<Dictionary<string, Reading>>(this);
 
             lock (_lock)
             {
                 return Task.FromResult<List<Metric>>(
-                    [.. Differences(_liveBaseline, readings).SelectMany(d => d.Value.ToMetrics(Name, d.Key, 0, m => m.Value))]);
+                    [.. Differences(baseline, readings).SelectMany(d => d.Value.ToMetrics(Name, d.Key, 0, m => m.Value))]);
             }
         }
         catch (Exception ex)

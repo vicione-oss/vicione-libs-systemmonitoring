@@ -32,7 +32,7 @@ public sealed class UptimeMetricsCollector(IFileSystem fileSystem) : IScheduledM
         }
     }
 
-    public async Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public async Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
         => [.. (await CollectMetrics(IntervalInMinutes, DateTimeOffset.UtcNow, cancellationToken)).Select(MetricsHelper.WithoutInterval)];
 
     private double CollectUptime()
