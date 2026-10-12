@@ -8,6 +8,11 @@ namespace ViciOne.SystemMonitoring.Collectors;
 [SupportedOSPlatform("linux")]
 public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector, ILiveMetricsCollector
 {
+    /// <summary>
+    /// The share of <c>idle</c> the CPU waited for I/O; it is not added to the total time a second time.
+    /// </summary>
+    private const string PartOfIdle = "iowait";
+
     private readonly Lock _lock = new();
 
     private readonly CpuTimes _intervalBaseline = new();
@@ -174,6 +179,9 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
                 // Idle = idle + iowait
                 ["idle"] = long.Parse(parts[4], CultureInfo.InvariantCulture) + long.Parse(parts[5], CultureInfo.InvariantCulture),
 
+                // Iowait, already counted in idle
+                [PartOfIdle] = long.Parse(parts[5], CultureInfo.InvariantCulture),
+
                 // Steal = steal
                 ["steal"] = long.Parse(parts[8], CultureInfo.InvariantCulture),
 
@@ -190,29 +198,24 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
     private static (Dictionary<string, double> Total, List<Dictionary<string, double>> PerCore) CalculatePercentages(
         Dictionary<string, double> totalCpuData, List<Dictionary<string, double>> perCoreCpuData, CpuTimes baseline)
     {
-        var totalPercentages = CalculateTotalCpuUsagePercentage(CalculateTotalDifferences(totalCpuData, baseline.Total));
+        var totalPercentages = CalculateUsagePercentages(CalculateTotalDifferences(totalCpuData, baseline.Total));
         var perCorePercentages = CalculatePerCoreCpuUsagePercentage(CalculatePerCoreDifferences(perCoreCpuData, baseline.PerCore));
         totalPercentages.Add("total_system", totalPercentages["user"] + totalPercentages["system"] + totalPercentages["steal"]);
         return (totalPercentages, perCorePercentages);
     }
 
-    private static Dictionary<string, double> CalculateTotalCpuUsagePercentage(Dictionary<string, double> differences)
+    private static Dictionary<string, double> CalculateUsagePercentages(Dictionary<string, double> differences)
     {
-        var totalJiffies = differences.Values.Sum();
+        var totalJiffies = differences.Where(kv => kv.Key != PartOfIdle).Sum(kv => kv.Value);
         if (totalJiffies == 0) return differences.ToDictionary(kv => kv.Key, kv => 0.0);
 
-        return differences.ToDictionary(kv => kv.Key, kv => kv.Value / totalJiffies * 100);
+        // The kernel may move idle time from iowait to idle between two reads, so the iowait counter can go backwards.
+        var iowait = Math.Max(0, differences.GetValueOrDefault(PartOfIdle));
+        return differences.ToDictionary(kv => kv.Key, kv => (kv.Key == PartOfIdle ? iowait : kv.Value) / totalJiffies * 100);
     }
 
     private static List<Dictionary<string, double>> CalculatePerCoreCpuUsagePercentage(List<Dictionary<string, double>> differences)
-        => [.. differences.Select(coreDifferences =>
-        {
-            var totalJiffies = coreDifferences.Values.Sum();
-            if (totalJiffies == 0)
-                return coreDifferences.ToDictionary(kv => kv.Key, kv => 0.0);
-
-            return coreDifferences.ToDictionary(kv => kv.Key, kv => kv.Value / totalJiffies * 100);
-        })];
+        => [.. differences.Select(CalculateUsagePercentages)];
 
     private static Dictionary<string, double> CalculateTotalDifferences(
         Dictionary<string, double> currentData,

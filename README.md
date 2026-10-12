@@ -67,7 +67,7 @@ third level of the MQTT topic.
 
 | Name | Interval | Live | Subgroup | Metrics |
 |---|---|---|---|---|
-| `cpu` | 1 min | yes | `total`, `core0` … | `user` (user + nice), `system` (system + irq + softirq), `idle` (idle + iowait), `steal`, `guest` (guest + guest_nice) [%]; `total` adds `total_system` (user + system + steal) [%] |
+| `cpu` | 1 min | yes | `total`, `core0` … | `user` (user + nice), `system` (system + irq + softirq), `idle` (idle + iowait), `iowait` (the part of `idle` in which a task on that CPU waited for I/O; a busy CPU accrues none, so one stalled task shows at most 1/number of cores in `total`), `steal`, `guest` (guest + guest_nice) [%]; `total` adds `total_system` (user + system + steal) [%] |
 | `cpu_frequency` | 1 min | yes | `total`, `core0` … | `current`, `limit` (the clock the kernel currently allows), `maximum` [MHz]; `total` holds the average `current`, the highest `maximum`, the clock utilisation `share_of_maximum` (average of `current` / `maximum` per core) and `limit_share` (lowest `limit` / `maximum` of a core) [%]. An idle core runs slow under the ondemand and schedutil governors |
 | `ram` | 1 min | yes | – | `total`, `free`, `available`, `buffer`, `cached` [kB]; `actual_memory_usage` (like htop), `used_memory_usage` (like top), `total_memory_usage` (like free) [%] |
 | `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading |
