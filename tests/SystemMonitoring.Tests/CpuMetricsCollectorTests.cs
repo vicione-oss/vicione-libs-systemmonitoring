@@ -53,6 +53,13 @@ public class CpuMetricsCollector_CollectMetrics
             m =>
             {
                 m.SubGroup.Should().Be("total");
+                m.Name.Should().Be("iowait");
+                m.Value.Should().Be(2d / 564 * 100);
+                m.Unit.Should().Be(MetricUnit.Percent);
+            },
+            m =>
+            {
+                m.SubGroup.Should().Be("total");
                 m.Name.Should().Be("steal");
                 m.Value.Should().Be(0);
                 m.Unit.Should().Be(MetricUnit.Percent);
@@ -96,6 +103,13 @@ public class CpuMetricsCollector_CollectMetrics
             m =>
             {
                 m.SubGroup.Should().Be("core0");
+                m.Name.Should().Be("iowait");
+                m.Value.Should().Be(0d);
+                m.Unit.Should().Be(MetricUnit.Percent);
+            },
+            m =>
+            {
+                m.SubGroup.Should().Be("core0");
                 m.Name.Should().Be("steal");
                 m.Value.Should().Be(0);
                 m.Unit.Should().Be(MetricUnit.Percent);
@@ -127,6 +141,13 @@ public class CpuMetricsCollector_CollectMetrics
                 m.SubGroup.Should().Be("core1");
                 m.Name.Should().Be("idle");
                 m.Value.Should().Be(53.71024734982333);
+                m.Unit.Should().Be(MetricUnit.Percent);
+            },
+            m =>
+            {
+                m.SubGroup.Should().Be("core1");
+                m.Name.Should().Be("iowait");
+                m.Value.Should().Be(2d / 283 * 100);
                 m.Unit.Should().Be(MetricUnit.Percent);
             },
             m =>

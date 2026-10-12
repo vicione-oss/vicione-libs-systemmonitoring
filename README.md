@@ -57,8 +57,8 @@ services
 - On a tick whose wall-clock minute is divisible by 15, the interval is 15. Otherwise it is 5 when the minute is divisible by 5, and 1 in all other cases.
 - A collector runs on its first tick and then whenever the interval is a multiple of its own interval (1, 5 or 15 minutes).
 - A one-time collector runs on the first tick only.
-- Collectors publish the current value as `Last`. Every 5 and 15 minutes, `cpu`, `cpu_frequency`, `ram`, `swap`, `disk_io`, `network`, `thermal_sensors` and `nginx` add the minimum, average and maximum since the previous aggregate as `Aggregates`; `disk` adds only the 15-minute one, and `loadavg`, `uptime` and `process` publish `Last` only.
-- Values derived from counters (CPU, process CPU, network bandwidth, disk I/O) cover the time since the previous reading.
+- Collectors publish the current value as `Last`. Every 5 and 15 minutes, `cpu`, `cpu_frequency`, `ram`, `swap`, `disk_io`, `network`, `thermal_sensors`, `thermal_zones` and `nginx` add the minimum, average and maximum since the previous aggregate as `Aggregates`; `disk` adds only the 15-minute one, `thermal_zones` leaves out its trip points, and `loadavg`, `uptime` and `process` publish `Last` only.
+- Values derived from counters (CPU, process CPU, network bandwidth, disk I/O, swapped pages, page cache refaults) cover the time since the previous reading.
 
 ## Collectors
 
@@ -67,15 +67,16 @@ third level of the MQTT topic.
 
 | Name | Interval | Live | Subgroup | Metrics |
 |---|---|---|---|---|
-| `cpu` | 1 min | yes | `total`, `core0` … | `user` (user + nice), `system` (system + irq + softirq), `idle` (idle + iowait), `steal`, `guest` (guest + guest_nice) [%]; `total` adds `total_system` (user + system + steal) [%] |
+| `cpu` | 1 min | yes | `total`, `core0` … | `user` (user + nice, without guest), `system` (system + irq + softirq), `idle` (idle + iowait), `iowait` (the part of `idle` in which a task on that CPU waited for I/O; a busy CPU accrues none, so one stalled task shows at most 1/number of cores in `total`), `steal`, `guest` (guest + guest_nice) [%]; `total` adds `total_system` (user + system + steal + guest) [%] |
 | `cpu_frequency` | 1 min | yes | `total`, `core0` … | `current`, `limit` (the clock the kernel currently allows), `maximum` [MHz]; `total` holds the average `current`, the highest `maximum`, the clock utilisation `share_of_maximum` (average of `current` / `maximum` per core) and `limit_share` (lowest `limit` / `maximum` of a core) [%]. An idle core runs slow under the ondemand and schedutil governors |
-| `ram` | 1 min | yes | – | `total`, `free`, `available`, `buffer`, `cached` [kB]; `actual_memory_usage` (like htop), `used_memory_usage` (like top), `total_memory_usage` (like free) [%] |
-| `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading |
+| `ram` | 1 min | yes | – | `total`, `free`, `available`, `buffer`, `cached` [kB]; `actual_memory_usage` (like htop), `used_memory_usage` (like top), `total_memory_usage` (like free) [%]; `page_cache_refaults_per_second`, page cache pages read back from disk shortly after they were evicted, which rises when memory is too small for the working set, with or without swap (not on the first reading; needs kernel 5.9) |
+| `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading; `swap_in_per_second`, `swap_out_per_second` [pages/s] (not on the first reading) |
 | `disk` | 5 min | yes | mount point, `/` replaced by `\` | `driveType`, `driveFormat`, `totalSizeGB`, `totalFreeSpaceGB` [GB], `usage` [%] |
 | `disk_io` | 1 min | yes | device, e.g. `mmcblk0` | `read_bytes_per_second`, `write_bytes_per_second` [B/s], `written_bytes` [B], `writes_per_second`, `busy` [%]; whole physical disks only |
 | `network` | 1 min | yes | interface, except `lo` | `rx_`/`tx_` `bytes` [B], `packets`, `errors`, `dropped`, `bandwidth` [B/s]; `collisions`, `carrier_errors`; `carrier` (1 with a cable, 0 without); when the link reports it: `speed` [Mbit/s], `duplex`, `rx_`/`tx_`/`total_bandwidth_usage` [%]; for a port of a built-in switch (DSA): `conduit`, the interface that carries and counts its traffic |
-| `loadavg` | 1 min | yes | – | `load1`, `load5`, `load15`, `running_kernel_scheduling_entities`, `total_kernel_scheduling_entities` |
+| `loadavg` | 1 min | yes | – | `load1`, `load5`, `load15`, `running_kernel_scheduling_entities`, `total_kernel_scheduling_entities`; `online_cpus`, the number of CPUs the load relates to, left out when `/sys/devices/system/cpu/online` cannot be read. The load counts runnable tasks and tasks blocked in uninterruptible sleep, mostly waiting for I/O, so `load1` / `online_cpus` is demand, not CPU utilisation |
 | `thermal_sensors` | 1 min | yes | – | One value per sensor and fan, named `<hwmon name>_<label>`; temperatures [°C], fan speeds without unit; see `NodeType` |
+| `thermal_zones` | 1 min | yes | zone type, e.g. `cpu-thermal`, `/` replaced by `\`, `+` and `#` by `_`; with the zone number when the device has several zones of that type | `temperature`, the lowest `passive_trip` (where the kernel starts to throttle) and `critical_trip` (where it shuts down) [°C]; `throttling`, the highest state of the cooling devices bound to a passive trip as a share of their maximum [%]. A state is a step such as a cpufreq operating point, not a share of the clock (see `cpu_frequency` `limit_share`), and a device bound to several zones shows the same state in each. A trip point or `throttling` the zone does not have is left out. Firmware that throttles on its own, as on a Raspberry Pi, binds no cooling device, so there neither `passive_trip` nor `throttling` tells whether the CPU is throttled; `critical_trip` is not a throttle threshold. Disabled zones and zones that cannot be read are skipped |
 | `uptime` | 1 min | yes | – | `uptime_seconds` [s] |
 | `process` | 1 min | yes | – | `processes`: JSON list with `Name`, `State`, `Pid`, `PPid`, `Threads`, `CpuUsage` [% of all cores], `MemoryDetails` (`VmSizeKb`, `VmRSSKb`, `VmPeakKb`, `VmSwapKb`), `MemoryUsageKb`, `CmdLine`, `StartTime` |
 | `processor` | once | no | – | `processor`: processor name from `/proc/cpuinfo`, published under `0min` |
@@ -117,7 +118,7 @@ using var subscription = liveMonitoring.Subscribe(TimeSpan.FromSeconds(2), sampl
 
 - With several subscriptions, the shortest interval wins and every subscriber receives every sample.
 - Disposing the subscription also stops its handler; a handler that throws is logged once and affects no other subscriber.
-- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output.
+- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output. Shares and rates in a live sample cover the time since the previous live sample, so they follow the shortest subscribed interval.
 - The regular values stay the same as without live sampling.
 
 ## Extending

@@ -10,6 +10,11 @@
 - `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
 - `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
 - `network` collector, `carrier` tells whether a cable is plugged in, and `conduit` names the interface behind a switch port such as `lan1`
+- `cpu` collector, `iowait` is the idle time in which a task waited for I/O, already contained in `idle`
+- `loadavg` collector, `online_cpus` is the number of CPUs the host schedules on, to relate the load to
+- `swap` collector, `swap_in_per_second` and `swap_out_per_second` are the pages swapped per second, independent of the sampling interval
+- `ram` collector, `page_cache_refaults_per_second` is the number of recently evicted page cache pages read back per second, a sign of memory pressure even without swap
+- `ThermalZoneMetricsCollector` (`thermal_zones`), temperature, passive and critical trip point and throttling state of each kernel thermal zone
 
 ### Changed
 
@@ -19,6 +24,7 @@
 
 - The uptime and the thermal sensors are read correctly whatever the culture of the process
 - Processes with a space in their name report their CPU usage and start time correctly
+- `cpu` counts the time spent running virtual machines once: the kernel also counts it in `user`, so it was added to the total twice and all shares came out too low on a host with busy guests. `user` now leaves it out, and `total_system` adds `guest`
 
 ## 1.0.1 - 2026-03-27
 

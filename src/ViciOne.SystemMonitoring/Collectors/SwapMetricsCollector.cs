@@ -6,10 +6,11 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
+public sealed class SwapMetricsCollector(IFileSystem fileSystem, TimeProvider? timeProvider) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
-    private readonly Dictionary<string, double> _intervalBaseline = [];
-    private readonly Dictionary<string, double> _liveBaseline = [];
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly Baseline _intervalBaseline = new();
+    private readonly Baseline _liveBaseline = new();
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
     private readonly Lock _lock = new();
@@ -17,16 +18,25 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
     public int IntervalInMinutes { get; } = 1;
     public string Name => "swap";
 
+    /// <summary>
+    /// The constructor of 1.0, kept for callers compiled against it.
+    /// </summary>
+    public SwapMetricsCollector(IFileSystem fileSystem)
+        : this(fileSystem, null)
+    {
+    }
+
     public Task<List<Metric>> CollectMetrics(int interval, DateTimeOffset cycleStartTime, CancellationToken cancellationToken)
     {
         try
         {
             var currentSwapStats = CollectSwapMetrics();
+            var now = _timeProvider.GetUtcNow();
 
             lock (_lock)
             {
-                var values = CalculateValues(currentSwapStats, _intervalBaseline);
-                UpdateBaseline(_intervalBaseline, currentSwapStats);
+                var values = CalculateValues(currentSwapStats, now, _intervalBaseline);
+                _intervalBaseline.Update(currentSwapStats, now);
 
                 var metricsData = CreateMetricsData(values);
                 List<Metric> metrics = [];
@@ -62,11 +72,12 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
         try
         {
             var currentSwapStats = CollectSwapMetrics();
+            var now = _timeProvider.GetUtcNow();
 
             lock (_lock)
             {
-                var values = CalculateValues(currentSwapStats, _liveBaseline);
-                UpdateBaseline(_liveBaseline, currentSwapStats);
+                var values = CalculateValues(currentSwapStats, now, _liveBaseline);
+                _liveBaseline.Update(currentSwapStats, now);
                 return Task.FromResult(CreateMetricsData(values).ToMetrics(Name, null, 0, m => m.Value).ToList());
             }
         }
@@ -132,24 +143,27 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
     }
 
     /// <summary>
-    /// <c>total</c> and <c>used</c> as read, the page counters <c>swap_in</c> and <c>swap_out</c> as the change since the previous reading.
+    /// <c>total</c> and <c>used</c> as read, the page counters <c>swap_in</c> and <c>swap_out</c> as the change since the baseline
+    /// and, unless this is the first reading, as that change per second.
     /// </summary>
-    private static Dictionary<string, double> CalculateValues(
-        Dictionary<string, double> currentData,
-        Dictionary<string, double> previousData)
-        => currentData.ToDictionary(kv => kv.Key, kv => !IsCounter(kv.Key)
+    private static Dictionary<string, double> CalculateValues(Dictionary<string, double> currentData, DateTimeOffset now, Baseline baseline)
+    {
+        var values = currentData.ToDictionary(kv => kv.Key, kv => !IsCounter(kv.Key)
             ? kv.Value
-            : previousData.TryGetValue(kv.Key, out var previous) ? kv.Value - previous : 0.0);
+            : baseline.Values.TryGetValue(kv.Key, out var previous) ? kv.Value - previous : 0.0);
+
+        var seconds = (now - baseline.Timestamp).TotalSeconds;
+        if (baseline.Values.Count == 0 || seconds <= 0)
+            return values;
+
+        foreach (var counter in currentData.Keys.Where(IsCounter))
+            values[$"{counter}_per_second"] = Math.Round(values[counter] / seconds, 2);
+
+        return values;
+    }
 
     private static bool IsCounter(string name)
         => name.StartsWith("swap", StringComparison.Ordinal);
-
-    private static void UpdateBaseline(Dictionary<string, double> baseline, Dictionary<string, double> currentData)
-    {
-        baseline.Clear();
-        foreach (var kv in currentData)
-            baseline[kv.Key] = kv.Value;
-    }
 
     private static List<LastMetricValue> CreateMetricsData(Dictionary<string, double> swapData)
         => [.. swapData.Select(kv => new LastMetricValue(kv.Key, kv.Value, IsCounter(kv.Key) ? MetricUnit.None : MetricUnit.Kilobyte))];
@@ -160,5 +174,24 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
     {
         if (metrics.Count > 0)
             buffer.Add(metrics);
+    }
+
+    /// <summary>
+    /// One reading and when it was taken, the reference for the next difference.
+    /// </summary>
+    private sealed class Baseline
+    {
+        public Dictionary<string, double> Values { get; } = [];
+
+        public DateTimeOffset Timestamp { get; private set; }
+
+        public void Update(Dictionary<string, double> values, DateTimeOffset timestamp)
+        {
+            Values.Clear();
+            foreach (var (name, value) in values)
+                Values[name] = value;
+
+            Timestamp = timestamp;
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using ViciOne.SystemMonitoring.Metrics;
@@ -60,6 +61,18 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
                 }
             ];
 
+            if (await ReadOnlineCpusAsync() is { } onlineCpus)
+            {
+                metrics.Add(new()
+                {
+                    Group = Name,
+                    Name = "online_cpus",
+                    IntervalInMinutes = IntervalInMinutes,
+                    Value = onlineCpus,
+                    Unit = MetricUnit.None,
+                });
+            }
+
             return metrics;
         }
         catch (Exception ex)
@@ -70,6 +83,48 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
 
     public async Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
         => [.. (await CollectMetrics(IntervalInMinutes, DateTimeOffset.UtcNow, cancellationToken)).Select(MetricsHelper.WithoutInterval)];
+
+    /// <summary>
+    /// The number of CPUs the kernel schedules on, which the load values relate to; null when the list cannot be read.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="Environment.ProcessorCount"/>: it is limited by the cgroup and the affinity of this process, while the load
+    /// counts the whole host.
+    /// </remarks>
+    private async Task<int?> ReadOnlineCpusAsync()
+    {
+        try
+        {
+            return CountCpus(await fileSystem.File.ReadAllTextAsync("/sys/devices/system/cpu/online"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Counts a kernel CPU list such as <c>0-3,6,8-9</c>.
+    /// </summary>
+    private static int? CountCpus(string? list)
+    {
+        var count = 0;
+        foreach (var range in (list ?? "").Trim().Split(','))
+        {
+            var bounds = range.Split('-');
+            if (bounds.Length > 2
+                || !int.TryParse(bounds[0], NumberStyles.None, CultureInfo.InvariantCulture, out var first)
+                || !int.TryParse(bounds[^1], NumberStyles.None, CultureInfo.InvariantCulture, out var last)
+                || last < first)
+            {
+                return null;
+            }
+
+            count += last - first + 1;
+        }
+
+        return count;
+    }
 
     private async Task<(double Load1, double Load5, double Load15, int Running, int Total)> ReadLoadAverageAsync()
     {
@@ -85,13 +140,13 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
             if (parts.Length < 4)
                 throw new FormatException($"Invalid {Name} format.");
 
-            if (!double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load1))
+            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var load1))
                 throw new FormatException($"Invalid {nameof(load1)} value.");
 
-            if (!double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load5))
+            if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var load5))
                 throw new FormatException($"Invalid {nameof(load5)} value.");
 
-            if (!double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load15))
+            if (!double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var load15))
                 throw new FormatException($"Invalid {nameof(load15)} value.");
 
             var processParts = parts[3].Split('/');

@@ -42,6 +42,51 @@ public class CpuMetricsCollector_CollectLiveMetrics
         metrics.Should().Contain(m => m.SubGroup == "total" && m.Name == "total_system");
     }
 
+    [Fact]
+    public async Task Reports_no_negative_iowait_when_the_kernel_moved_it_to_idle()
+    {
+        var fileSystem = Substitute.For<IFileSystem>();
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(["cpu  100 0 100 1000 50 0 0 0 0 0"]);
+        CpuMetricsCollector collector = new(fileSystem);
+        await collector.PrepareMetrics(CancellationToken.None);
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(["cpu  200 0 200 1100 40 0 0 0 0 0"]);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Single(m => m.SubGroup == "total" && m.Name == "iowait").Value.Should().Be(0d);
+        metrics.Single(m => m.SubGroup == "total" && m.Name == "idle").Value.Should().Be(90d / 290 * 100);
+    }
+
+    [Fact]
+    public async Task Counts_the_guest_time_once_although_the_kernel_also_counts_it_in_user()
+    {
+        var fileSystem = Substitute.For<IFileSystem>();
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(["cpu  0 0 0 0 0 0 0 0 0 0"]);
+        CpuMetricsCollector collector = new(fileSystem);
+        await collector.PrepareMetrics(CancellationToken.None);
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(["cpu  250 50 100 600 0 0 0 0 80 20"]);
+
+        var metrics = (await collector.CollectLiveMetrics(CancellationToken.None)).Where(m => m.SubGroup == "total").ToDictionary(m => m.Name, m => m.Value);
+
+        metrics.Should().Contain("user", 20d).And.Contain("guest", 10d).And.Contain("idle", 60d).And.Contain("total_system", 40d);
+    }
+
+    [Fact]
+    public async Task Reports_the_iowait_share_since_the_previous_live_reading()
+    {
+        var first = await File.ReadAllLinesAsync("./EdgeS/proc/stat", TestContext.Current.CancellationToken);
+        var second = await File.ReadAllLinesAsync("./EdgeS/proc/stat2", TestContext.Current.CancellationToken);
+        var fileSystem = Substitute.For<IFileSystem>();
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(first);
+        CpuMetricsCollector collector = new(fileSystem);
+        await collector.PrepareMetrics(CancellationToken.None);
+        fileSystem.File.ReadAllLines("/proc/stat").Returns(second);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Single(m => m.SubGroup == "total" && m.Name == "iowait").Value.Should().Be(2d / 564 * 100);
+    }
+
     private static async Task<object> RegularTotalSystem(bool liveReads)
     {
         var first = await File.ReadAllLinesAsync("./EdgeS/proc/stat", TestContext.Current.CancellationToken);
