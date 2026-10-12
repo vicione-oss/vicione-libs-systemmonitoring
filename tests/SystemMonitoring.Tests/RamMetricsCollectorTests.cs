@@ -26,6 +26,19 @@ public class RamMetricsCollector_CollectMetrics
     }
 
     [Fact]
+    public async Task Rounds_the_page_cache_refaults_per_second_to_two_decimals()
+    {
+        var (collector, fileSystem, timeProvider) = await CreateCollector();
+        await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+        fileSystem.File.ReadAllLines("/proc/vmstat").Returns(["workingset_refault_file 4577"]);
+        timeProvider.Advance(60.Seconds());
+
+        var metrics = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        RefaultsPerSecond(metrics, interval: 1).Should().Be(0.02);
+    }
+
+    [Fact]
     public async Task Reports_no_page_cache_refaults_on_the_first_reading()
     {
         var (collector, _, _) = await CreateCollector();

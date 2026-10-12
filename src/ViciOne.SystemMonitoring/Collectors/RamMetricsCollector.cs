@@ -117,7 +117,7 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem, TimeProvider? ti
             yield break;
 
         var seconds = (current.Timestamp - baseline.Timestamp).TotalSeconds;
-        yield return new LastMetricValue("page_cache_refaults_per_second", (current.Refaults - baseline.Refaults) / seconds, MetricUnit.None);
+        yield return new LastMetricValue("page_cache_refaults_per_second", Math.Round((current.Refaults - baseline.Refaults) / seconds, 2), MetricUnit.None);
     }
 
     /// <summary>

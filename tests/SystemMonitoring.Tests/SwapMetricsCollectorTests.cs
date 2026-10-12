@@ -30,8 +30,8 @@ public class SwapMetricsCollector_CollectMetrics
             ["used"] = (58_572, MetricUnit.Kilobyte),
             ["swap_in"] = (5, MetricUnit.None),
             ["swap_out"] = (40, MetricUnit.None),
-            ["swap_in_per_second"] = (5 / 60d, MetricUnit.None),
-            ["swap_out_per_second"] = (40 / 60d, MetricUnit.None),
+            ["swap_in_per_second"] = (0.08, MetricUnit.None),
+            ["swap_out_per_second"] = (0.67, MetricUnit.None),
         });
     }
 

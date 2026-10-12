@@ -157,7 +157,7 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem, TimeProvider? t
             return values;
 
         foreach (var counter in currentData.Keys.Where(IsCounter))
-            values[$"{counter}_per_second"] = values[counter] / seconds;
+            values[$"{counter}_per_second"] = Math.Round(values[counter] / seconds, 2);
 
         return values;
     }
