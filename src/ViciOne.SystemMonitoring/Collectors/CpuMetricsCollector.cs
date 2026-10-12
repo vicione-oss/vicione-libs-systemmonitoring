@@ -170,8 +170,9 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
 
             return new Dictionary<string, double>
             {
-                // User = user + user nice
-                ["user"] = long.Parse(parts[1], CultureInfo.InvariantCulture) + long.Parse(parts[2], CultureInfo.InvariantCulture),
+                // User = user + user nice, without the guest time the kernel counts in both as well
+                ["user"] = long.Parse(parts[1], CultureInfo.InvariantCulture) + long.Parse(parts[2], CultureInfo.InvariantCulture)
+                    - long.Parse(parts[9], CultureInfo.InvariantCulture) - long.Parse(parts[10], CultureInfo.InvariantCulture),
 
                 // System = system + irq + softirq
                 ["system"] = long.Parse(parts[3], CultureInfo.InvariantCulture) + long.Parse(parts[6], CultureInfo.InvariantCulture) + long.Parse(parts[7], CultureInfo.InvariantCulture),
@@ -200,7 +201,7 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
     {
         var totalPercentages = CalculateUsagePercentages(CalculateTotalDifferences(totalCpuData, baseline.Total));
         var perCorePercentages = CalculatePerCoreCpuUsagePercentage(CalculatePerCoreDifferences(perCoreCpuData, baseline.PerCore));
-        totalPercentages.Add("total_system", totalPercentages["user"] + totalPercentages["system"] + totalPercentages["steal"]);
+        totalPercentages.Add("total_system", totalPercentages["user"] + totalPercentages["system"] + totalPercentages["steal"] + totalPercentages["guest"]);
         return (totalPercentages, perCorePercentages);
     }
 

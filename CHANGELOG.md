@@ -24,6 +24,7 @@
 
 - The uptime and the thermal sensors are read correctly whatever the culture of the process
 - Processes with a space in their name report their CPU usage and start time correctly
+- `cpu` counts the time spent running virtual machines once: the kernel also counts it in `user`, so it was added to the total twice and all shares came out too low on a host with busy guests. `user` now leaves it out, and `total_system` adds `guest`
 
 ## 1.0.1 - 2026-03-27
 
