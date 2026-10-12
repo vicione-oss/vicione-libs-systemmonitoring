@@ -100,7 +100,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
     }
 
     /// <summary>
-    /// Null for a zone that went away since the directory was listed.
+    /// Null for a zone that went away since the directory was listed or whose type may not be read.
     /// </summary>
     private string? ReadType(string zone)
     {
@@ -108,15 +108,15 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
         {
             return ReadText($"{zone}/type");
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
 
     /// <summary>
-    /// Null for a disabled zone and for one that cannot be read, such as the zone of a switched-off Wi-Fi adapter or one that
-    /// went away since the directory was listed.
+    /// Null for a disabled zone and for one that cannot be read, such as the zone of a switched-off Wi-Fi adapter, one that
+    /// went away since the directory was listed or one that may not be read.
     /// </summary>
     private List<LastMetricValue>? ReadZone(string zone)
     {
@@ -139,7 +139,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
 
             return values;
         }
-        catch (Exception ex) when (ex is IOException or FormatException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or OverflowException)
         {
             return null;
         }

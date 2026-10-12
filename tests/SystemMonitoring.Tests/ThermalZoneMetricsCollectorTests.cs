@@ -125,6 +125,34 @@ public class ThermalZoneMetricsCollector_CollectMetrics
     }
 
     [Fact]
+    public async Task Skips_a_zone_that_may_not_be_read()
+    {
+        var fileSystem = Zones(Zone0, $"{ThermalDirectory}/thermal_zone1");
+        Zone(fileSystem, Zone0, "cpu-thermal", "42000");
+        Zone(fileSystem, $"{ThermalDirectory}/thermal_zone1", "gpu-thermal", "41000");
+        fileSystem.File.ReadAllText($"{ThermalDirectory}/thermal_zone1/temp").Throws(new UnauthorizedAccessException());
+        ThermalZoneMetricsCollector collector = new(fileSystem);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
+    }
+
+    [Fact]
+    public async Task Skips_a_zone_whose_type_may_not_be_read()
+    {
+        var fileSystem = EdgeS();
+        var zone1 = $"{ThermalDirectory}/thermal_zone1";
+        fileSystem.Directory.GetDirectories(ThermalDirectory, "thermal_zone*").Returns([Zone0, zone1]);
+        fileSystem.File.ReadAllText($"{zone1}/type").Throws(new UnauthorizedAccessException());
+        ThermalZoneMetricsCollector collector = new(fileSystem);
+
+        var metrics = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        metrics.Select(m => m.SubGroup).Should().OnlyContain(s => s == "cpu-thermal");
+    }
+
+    [Fact]
     public async Task Skips_a_zone_whose_cooling_device_cannot_be_read()
     {
         var fileSystem = EdgeS();
