@@ -40,6 +40,7 @@ public readonly ref struct SystemMonitoringBuilder
             .AddCollector<RamMetricsCollector>()
             .AddCollector<SwapMetricsCollector>()
             .AddCollector<ThermalSensorsMetricsCollector>()
+            .AddCollector<ThermalZoneMetricsCollector>()
             .AddCollector<UptimeMetricsCollector>();
 
         _services.TryAddSingleton<IFileSystem, FileSystem>();

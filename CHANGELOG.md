@@ -14,6 +14,7 @@
 - `loadavg` collector, `online_cpus` is the number of CPUs the host schedules on, to relate the load to
 - `swap` collector, `swap_in_per_second` and `swap_out_per_second` are the pages swapped per second, independent of the sampling interval
 - `ram` collector, `page_cache_refaults_per_second` is the number of recently evicted page cache pages read back per second, a sign of memory pressure even without swap
+- `ThermalZoneMetricsCollector` (`thermal_zones`), temperature, passive and critical trip point and throttling state of each kernel thermal zone
 
 ### Changed
 
