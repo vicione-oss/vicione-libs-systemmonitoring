@@ -227,7 +227,7 @@ public class LiveMonitoringService_
     }
 
     [Fact]
-    public async Task Restarts_sampling_that_ended_when_subscribed_again()
+    public async Task Keeps_sampling_after_a_failed_read()
     {
         var reads = 0;
         var source = Substitute.For<ILiveMetricsSource>();
@@ -240,14 +240,18 @@ public class LiveMonitoringService_
                 : [new() { Group = "cpu", Name = "value", IntervalInMinutes = 0, Value = 1d, Unit = MetricUnit.None }];
         });
         FakeTimeProvider timeProvider = new();
-        await using LiveMonitoringService service = new(source, new TestLogger<LiveMonitoringService>(), timeProvider);
-        using var first = service.Subscribe(2.Seconds(), _ => { });
+        TestLogger<LiveMonitoringService> logger = new();
+        await using LiveMonitoringService service = new(source, logger, timeProvider);
+        var samples = 0;
+        using var subscription = service.Subscribe(2.Seconds(), _ => Interlocked.Increment(ref samples));
         (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
-        (await AdvanceUntilCollected(timeProvider, collected)).Should().BeTrue("the second read fails and ends the loop");
 
-        using var second = service.Subscribe(2.Seconds(), _ => { });
+        (await AdvanceUntilCollected(timeProvider, collected)).Should().BeTrue("the second read fails");
+        (await AdvanceUntilCollected(timeProvider, collected)).Should().BeTrue();
+        (await AdvanceUntilCollected(timeProvider, collected)).Should().BeTrue();
 
-        (await collected.WaitAsync(1_000, TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await Eventually(() => Volatile.Read(ref samples) >= 2)).Should().BeTrue();
+        logger.Entries.Where(e => e.Exception is not null).Should().ContainSingle();
     }
 
     [Fact]

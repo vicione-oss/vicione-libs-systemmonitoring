@@ -65,7 +65,7 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
     private void Restart()
     {
         var interval = _subscriptions.Count == 0 ? TimeSpan.Zero : _subscriptions.Min(s => s.Interval);
-        if (interval == _interval && (_sampling is { IsCompleted: false }) == (interval > TimeSpan.Zero))
+        if (interval == _interval && (_sampling is not null) == (interval > TimeSpan.Zero))
             return;
 
         _ = Stop();
@@ -96,28 +96,45 @@ internal sealed class LiveMonitoringService(ILiveMetricsSource source, ILogger<L
         return sampling?.ContinueWith(_ => cancellation.Dispose(), TaskScheduler.Default);
     }
 
+    /// <summary>
+    /// Runs until the last subscription is disposed; a failed read is logged once and skips that tick only.
+    /// </summary>
     private async Task Sample(TimeSpan interval, CancellationToken cancellationToken)
     {
+        var readFailed = false;
+
+        async Task<List<Metric>?> Read()
+        {
+            try
+            {
+                return await source.CollectLiveMetrics(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                if (!readFailed)
+                    logger.LogLiveReadFailed(ex);
+
+                readFailed = true;
+                return null;
+            }
+        }
+
         try
         {
             // The first read only moves the live baselines to now.
-            await source.CollectLiveMetrics(cancellationToken);
+            await Read();
 
             using var timer = new PeriodicTimer(interval, _timeProvider);
             HashSet<Subscription> failedSubscribers = [];
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                var metrics = await source.CollectLiveMetrics(cancellationToken);
-                Publish(new(metrics, _timeProvider.GetUtcNow()), failedSubscribers);
+                if (await Read() is { } metrics)
+                    Publish(new(metrics, _timeProvider.GetUtcNow()), failedSubscribers);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // The last subscription was disposed.
-        }
-        catch (Exception ex)
-        {
-            logger.LogLiveSamplingFailed(ex);
         }
     }
 
