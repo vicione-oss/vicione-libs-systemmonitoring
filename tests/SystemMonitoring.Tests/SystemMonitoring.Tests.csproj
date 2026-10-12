@@ -104,6 +104,15 @@
     <None Update="EdgeS\sys\class\net\lan1\speed">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="EdgeS\sys\class\net\end0\carrier">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="EdgeS\sys\class\net\lan1\carrier">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="EdgeS\sys\class\net\lan2\carrier">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

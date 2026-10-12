@@ -7,7 +7,7 @@ using ViciOne.SystemMonitoring.Collectors;
 
 namespace ViciOne.SystemMonitoring;
 
-[SuppressMessage("Interoperability", "CA1416:Plattformkompatibilität überprüfen")]
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
 public class NetworkMetricsCollectorTests
 {
     [Fact]
@@ -22,6 +22,9 @@ public class NetworkMetricsCollectorTests
         fileSystem.File.ReadAllText("/sys/class/net/lan2/speed").Returns(File.ReadAllText("./EdgeS/sys/class/net/lan2/speed"));
         fileSystem.File.ReadAllText("/sys/class/net/lan1/duplex").Returns(File.ReadAllText("./EdgeS/sys/class/net/lan1/duplex"));
         fileSystem.File.ReadAllText("/sys/class/net/lan1/speed").Returns(File.ReadAllText("./EdgeS/sys/class/net/lan1/speed"));
+        fileSystem.File.ReadAllText("/sys/class/net/end0/carrier").Returns(File.ReadAllText("./EdgeS/sys/class/net/end0/carrier"));
+        fileSystem.File.ReadAllText("/sys/class/net/lan1/carrier").Returns(File.ReadAllText("./EdgeS/sys/class/net/lan1/carrier"));
+        fileSystem.File.ReadAllText("/sys/class/net/lan2/carrier").Returns(File.ReadAllText("./EdgeS/sys/class/net/lan2/carrier"));
 #pragma warning restore CA1849 // Asynchrone Methoden in einer asynchronen Methode aufrufen
 
         NetworkMetricsCollector collector = new(fileSystem, Substitute.For<ILogger<NetworkMetricsCollector>>());
@@ -214,263 +217,284 @@ public class NetworkMetricsCollectorTests
         /*25*/ m =>
         {
             m.SubGroup.Should().Be("end0");
-            m.Name.Should().Be("rx_bandwidth_usage");
-            m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.Percent);
+            m.Name.Should().Be("carrier");
+            m.Value.Should().Be(1d);
+            m.Unit.Should().Be(MetricUnit.None);
         },
         /*26*/ m =>
         {
             m.SubGroup.Should().Be("end0");
-            m.Name.Should().Be("tx_bandwidth_usage");
+            m.Name.Should().Be("rx_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
         /*27*/ m =>
         {
             m.SubGroup.Should().Be("end0");
+            m.Name.Should().Be("tx_bandwidth_usage");
+            m.Value.Should().Be(0);
+            m.Unit.Should().Be(MetricUnit.Percent);
+        },
+        /*28*/ m =>
+        {
+            m.SubGroup.Should().Be("end0");
             m.Name.Should().Be("speed");
             m.Value.Should().Be(1000);
             m.Unit.Should().Be(MetricUnit.MegabitPerSecond);
         },
-        /*28*/ m =>
+        /*29*/ m =>
         {
             m.SubGroup.Should().Be("end0");
             m.Name.Should().Be("total_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*29*/ m => //lan1
+        /*30*/ m => //lan1
         {
             m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("collisions");
-            m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.None);
-        },
-        /*30*/ m =>
-        {
-            m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("carrier_errors");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
         /*31*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("rx_packets");
+            m.Name.Should().Be("carrier_errors");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
         /*32*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("rx_bytes");
+            m.Name.Should().Be("rx_packets");
             m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.Byte);
+            m.Unit.Should().Be(MetricUnit.None);
         },
         /*33*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("rx_dropped");
+            m.Name.Should().Be("rx_bytes");
             m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.None);
+            m.Unit.Should().Be(MetricUnit.Byte);
         },
         /*34*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("rx_errors");
+            m.Name.Should().Be("rx_dropped");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
         /*35*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("tx_bytes");
+            m.Name.Should().Be("rx_errors");
             m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.Byte);
+            m.Unit.Should().Be(MetricUnit.None);
         },
         /*36*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("tx_packets");
+            m.Name.Should().Be("tx_bytes");
             m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.None);
+            m.Unit.Should().Be(MetricUnit.Byte);
         },
         /*37*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("tx_dropped");
+            m.Name.Should().Be("tx_packets");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
         /*38*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("tx_errors");
+            m.Name.Should().Be("tx_dropped");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
         /*39*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("rx_bandwidth");
+            m.Name.Should().Be("tx_errors");
             m.Value.Should().Be(0);
-            m.Unit.Should().Be(MetricUnit.BytePerSecond);
+            m.Unit.Should().Be(MetricUnit.None);
         },
         /*40*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
-            m.Name.Should().Be("tx_bandwidth");
+            m.Name.Should().Be("rx_bandwidth");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.BytePerSecond);
         },
         /*41*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
+            m.Name.Should().Be("tx_bandwidth");
+            m.Value.Should().Be(0);
+            m.Unit.Should().Be(MetricUnit.BytePerSecond);
+        },
+        /*42*/ m =>
+        {
+            m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("duplex");
             m.Value.Should().Be("full");
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*42*/ m =>
+        /*43*/ m =>
+        {
+            m.SubGroup.Should().Be("lan1");
+            m.Name.Should().Be("carrier");
+            m.Value.Should().Be(1d);
+            m.Unit.Should().Be(MetricUnit.None);
+        },
+        /*44*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("rx_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*43*/ m =>
+        /*45*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("tx_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*44*/ m =>
+        /*46*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("speed");
             m.Value.Should().Be(1000);
             m.Unit.Should().Be(MetricUnit.MegabitPerSecond);
         },
-        /*45*/ m =>
+        /*47*/ m =>
         {
             m.SubGroup.Should().Be("lan1");
             m.Name.Should().Be("total_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*46*/ m => //lan2
+        /*48*/ m => //lan2
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("collisions");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*47*/ m =>
+        /*49*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("carrier_errors");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*48*/ m =>
+        /*50*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_packets");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*49*/ m =>
+        /*51*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_bytes");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Byte);
         },
-        /*50*/ m =>
+        /*52*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_dropped");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*51*/ m =>
+        /*53*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_errors");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*52*/ m =>
+        /*54*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_bytes");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Byte);
         },
-        /*53*/ m =>
+        /*55*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_packets");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*54*/ m =>
+        /*56*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_dropped");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*55*/ m =>
+        /*57*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_errors");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*56*/ m =>
+        /*58*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_bandwidth");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.BytePerSecond);
         },
-        /*57*/ m =>
+        /*59*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_bandwidth");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.BytePerSecond);
         },
-        /*58*/ m =>
+        /*60*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("duplex");
             m.Value.Should().Be("full");
             m.Unit.Should().Be(MetricUnit.None);
         },
-        /*59*/ m =>
+        /*61*/ m =>
+        {
+            m.SubGroup.Should().Be("lan2");
+            m.Name.Should().Be("carrier");
+            m.Value.Should().Be(0d);
+            m.Unit.Should().Be(MetricUnit.None);
+        },
+        /*62*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("rx_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*60*/ m =>
+        /*63*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("tx_bandwidth_usage");
             m.Value.Should().Be(0);
             m.Unit.Should().Be(MetricUnit.Percent);
         },
-        /*61*/ m =>
+        /*64*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("speed");
             m.Value.Should().Be(1000);
             m.Unit.Should().Be(MetricUnit.MegabitPerSecond);
         },
-        /*62*/ m =>
+        /*65*/ m =>
         {
             m.SubGroup.Should().Be("lan2");
             m.Name.Should().Be("total_bandwidth_usage");

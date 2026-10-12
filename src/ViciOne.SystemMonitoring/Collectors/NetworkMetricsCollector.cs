@@ -134,6 +134,8 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
             var stats = CatchIOException(() => ParseNetStats(parts), ex => throw ex);
             stats!.Duplex = CatchIOException(() => ReadDuplex(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
             stats.Speed = CatchIOException(() => ReadSpeed(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
+            stats.Carrier = ReadCarrier(interfaceName);
+            stats.Conduit = CatchIOException(() => ReadConduit(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
             networkStats[interfaceName] = stats;
         }
 
@@ -185,6 +187,43 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
         return fileSystem.File.ReadAllText($"/sys/class/net/{interfaceName}/duplex").Replace('\n', ' ').Trim();
     }
 
+    private bool? ReadCarrier(string interfaceName)
+    {
+        if (interfaceName == LoopbackInterfaceName)
+            return null;
+
+        try
+        {
+            return fileSystem.File.ReadAllText($"/sys/class/net/{interfaceName}/carrier").Trim() == "1";
+        }
+        catch (IOException)
+        {
+            // The kernel refuses to report the carrier of an interface that is down.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// For a port of a built-in switch (DSA), such as lan1 on an edge device, the interface that carries its traffic.
+    /// </summary>
+    /// <remarks>
+    /// Linux counts the traffic of such a port only on that interface; the port itself reports zero bytes.
+    /// </remarks>
+    private string? ReadConduit(string interfaceName)
+    {
+        if (interfaceName == LoopbackInterfaceName)
+            return null;
+
+        foreach (var entry in fileSystem.Directory.GetFileSystemEntries($"/sys/class/net/{interfaceName}", "lower_*"))
+        {
+            var lower = fileSystem.Path.GetFileName(entry)["lower_".Length..];
+            if (fileSystem.Directory.Exists($"/sys/class/net/{lower}/dsa"))
+                return lower;
+        }
+
+        return null;
+    }
+
     private int? ReadSpeed(string interfaceName)
     {
         if (interfaceName == LoopbackInterfaceName)
@@ -233,6 +272,10 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
     {
         if (data.Duplex != null)
             metrics.Add(new("duplex", data.Duplex, MetricUnit.None));
+        if (data.Carrier != null)
+            metrics.Add(new("carrier", data.Carrier.Value ? 1d : 0d, MetricUnit.None));
+        if (data.Conduit != null)
+            metrics.Add(new("conduit", data.Conduit, MetricUnit.None));
         if (data.ReceiveBandwidthUsage != null)
             metrics.Add(new("rx_bandwidth_usage", data.ReceiveBandwidthUsage, MetricUnit.Percent));
         if (data.TransmittBandwidthUsage != null)

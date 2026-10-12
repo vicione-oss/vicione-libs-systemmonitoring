@@ -54,6 +54,8 @@ internal static class NetworkStatsFactory
             CarrierErrors = CalculateDifferenceCountingInWrapAround(currentData.CarrierErrors, previousData.CarrierErrors),
             SpeedMBps = currentData.Speed,
             Duplex = currentData.Duplex,
+            Carrier = currentData.Carrier,
+            Conduit = currentData.Conduit,
         };
 
     internal static double CalculateDifferenceCountingInWrapAround(ulong current, ulong previous)

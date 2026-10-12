@@ -9,6 +9,7 @@
 - `LinuxProcessInfo.StartTime`, when the process started
 - `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
 - `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
+- `network` collector, `carrier` tells whether a cable is plugged in, and `conduit` names the interface behind a switch port such as `lan1`
 
 ### Changed
 

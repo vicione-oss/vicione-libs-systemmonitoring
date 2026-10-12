@@ -73,7 +73,7 @@ third level of the MQTT topic.
 | `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading |
 | `disk` | 5 min | yes | mount point, `/` replaced by `\` | `driveType`, `driveFormat`, `totalSizeGB`, `totalFreeSpaceGB` [GB], `usage` [%] |
 | `disk_io` | 1 min | yes | device, e.g. `mmcblk0` | `read_bytes_per_second`, `write_bytes_per_second` [B/s], `written_bytes` [B], `writes_per_second`, `busy` [%]; whole physical disks only |
-| `network` | 1 min | yes | interface, except `lo` | `rx_`/`tx_` `bytes` [B], `packets`, `errors`, `dropped`, `bandwidth` [B/s]; `collisions`, `carrier_errors`; when the link reports it: `speed` [Mbit/s], `duplex`, `rx_`/`tx_`/`total_bandwidth_usage` [%] |
+| `network` | 1 min | yes | interface, except `lo` | `rx_`/`tx_` `bytes` [B], `packets`, `errors`, `dropped`, `bandwidth` [B/s]; `collisions`, `carrier_errors`; `carrier` (1 with a cable, 0 without); when the link reports it: `speed` [Mbit/s], `duplex`, `rx_`/`tx_`/`total_bandwidth_usage` [%]; for a port of a built-in switch (DSA): `conduit`, the interface that carries and counts its traffic |
 | `loadavg` | 1 min | yes | – | `load1`, `load5`, `load15`, `running_kernel_scheduling_entities`, `total_kernel_scheduling_entities` |
 | `thermal_sensors` | 1 min | yes | – | One value per sensor and fan, named `<hwmon name>_<label>`; temperatures [°C], fan speeds without unit; see `NodeType` |
 | `uptime` | 1 min | yes | – | `uptime_seconds` [s] |

@@ -14,6 +14,8 @@ internal class NetworkStats
     public double CarrierErrors { get; init; }
     public double? SpeedMBps { get; set; }
     public string? Duplex { get; set; }
+    public bool? Carrier { get; set; }
+    public string? Conduit { get; set; }
     public double? ReceiveBandwidth { get; set; }
     public double? TransmittBandwidth { get; set; }
     public double? TotalBandwidthUsage { get; set; }
