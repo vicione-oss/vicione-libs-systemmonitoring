@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Abstractions;
 using AwesomeAssertions;
+using AwesomeAssertions.Extensions;
+using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 using ViciOne.SystemMonitoring.Collectors;
 using ViciOne.SystemMonitoring.Metrics;
@@ -14,9 +16,11 @@ public class SwapMetricsCollector_CollectMetrics
     public async Task Returns_the_current_size_and_the_pages_swapped_since_the_previous_reading()
     {
         var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
-        SwapMetricsCollector collector = new(fileSystem);
+        FakeTimeProvider timeProvider = new();
+        SwapMetricsCollector collector = new(fileSystem, timeProvider);
         await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
         Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
+        timeProvider.Advance(60.Seconds());
 
         var metrics = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
 
@@ -26,6 +30,8 @@ public class SwapMetricsCollector_CollectMetrics
             ["used"] = (58_572, MetricUnit.Kilobyte),
             ["swap_in"] = (5, MetricUnit.None),
             ["swap_out"] = (40, MetricUnit.None),
+            ["swap_in_per_second"] = (5 / 60d, MetricUnit.None),
+            ["swap_out_per_second"] = (40 / 60d, MetricUnit.None),
         });
     }
 
@@ -38,7 +44,33 @@ public class SwapMetricsCollector_CollectMetrics
 
         Values(metrics).Should().Contain("total", (1_048_572, MetricUnit.Kilobyte))
             .And.Contain("used", (48_572, MetricUnit.Kilobyte))
-            .And.Contain("swap_in", (0, MetricUnit.None));
+            .And.Contain("swap_in", (0, MetricUnit.None))
+            .And.NotContainKeys("swap_in_per_second", "swap_out_per_second");
+    }
+
+    [Fact]
+    public async Task Reports_a_device_without_swap_as_empty()
+    {
+        SwapMetricsCollector collector = new(FileSystem(totalKb: 0, freeKb: 0, swapIn: 0, swapOut: 0));
+
+        var metrics = await collector.CollectMetrics(1, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Values(metrics).Should().Contain("total", (0, MetricUnit.Kilobyte)).And.Contain("used", (0, MetricUnit.Kilobyte));
+    }
+
+    [Fact]
+    public async Task Reports_the_pages_swapped_per_second_since_the_previous_live_reading()
+    {
+        var fileSystem = FileSystem(totalKb: 1_048_572, freeKb: 1_000_000, swapIn: 120, swapOut: 300);
+        FakeTimeProvider timeProvider = new();
+        SwapMetricsCollector collector = new(fileSystem, timeProvider);
+        await collector.CollectLiveMetrics(CancellationToken.None);
+        Swap(fileSystem, totalKb: 1_048_572, freeKb: 990_000, swapIn: 125, swapOut: 340);
+        timeProvider.Advance(2.Seconds());
+
+        var live = await collector.CollectLiveMetrics(CancellationToken.None);
+
+        live.Single(m => m.Name == "swap_out_per_second").Value.Should().Be(20d);
     }
 
     [Fact]

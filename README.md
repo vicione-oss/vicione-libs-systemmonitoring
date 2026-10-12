@@ -58,7 +58,7 @@ services
 - A collector runs on its first tick and then whenever the interval is a multiple of its own interval (1, 5 or 15 minutes).
 - A one-time collector runs on the first tick only.
 - Collectors publish the current value as `Last`. Every 5 and 15 minutes, `cpu`, `cpu_frequency`, `ram`, `swap`, `disk_io`, `network`, `thermal_sensors` and `nginx` add the minimum, average and maximum since the previous aggregate as `Aggregates`; `disk` adds only the 15-minute one, and `loadavg`, `uptime` and `process` publish `Last` only.
-- Values derived from counters (CPU, process CPU, network bandwidth, disk I/O) cover the time since the previous reading.
+- Values derived from counters (CPU, process CPU, network bandwidth, disk I/O, swapped pages, page cache refaults) cover the time since the previous reading.
 
 ## Collectors
 
@@ -69,8 +69,8 @@ third level of the MQTT topic.
 |---|---|---|---|---|
 | `cpu` | 1 min | yes | `total`, `core0` … | `user` (user + nice), `system` (system + irq + softirq), `idle` (idle + iowait), `iowait` (the part of `idle` in which a task on that CPU waited for I/O; a busy CPU accrues none, so one stalled task shows at most 1/number of cores in `total`), `steal`, `guest` (guest + guest_nice) [%]; `total` adds `total_system` (user + system + steal) [%] |
 | `cpu_frequency` | 1 min | yes | `total`, `core0` … | `current`, `limit` (the clock the kernel currently allows), `maximum` [MHz]; `total` holds the average `current`, the highest `maximum`, the clock utilisation `share_of_maximum` (average of `current` / `maximum` per core) and `limit_share` (lowest `limit` / `maximum` of a core) [%]. An idle core runs slow under the ondemand and schedutil governors |
-| `ram` | 1 min | yes | – | `total`, `free`, `available`, `buffer`, `cached` [kB]; `actual_memory_usage` (like htop), `used_memory_usage` (like top), `total_memory_usage` (like free) [%] |
-| `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading |
+| `ram` | 1 min | yes | – | `total`, `free`, `available`, `buffer`, `cached` [kB]; `actual_memory_usage` (like htop), `used_memory_usage` (like top), `total_memory_usage` (like free) [%]; `page_cache_refaults_per_second`, page cache pages read back from disk shortly after they were evicted, which rises when memory is too small for the working set, with or without swap (not on the first reading; needs kernel 5.9) |
+| `swap` | 1 min | yes | – | `total`, `used` [kB]; `swap_in`, `swap_out` [pages] since the previous reading; `swap_in_per_second`, `swap_out_per_second` [pages/s] (not on the first reading) |
 | `disk` | 5 min | yes | mount point, `/` replaced by `\` | `driveType`, `driveFormat`, `totalSizeGB`, `totalFreeSpaceGB` [GB], `usage` [%] |
 | `disk_io` | 1 min | yes | device, e.g. `mmcblk0` | `read_bytes_per_second`, `write_bytes_per_second` [B/s], `written_bytes` [B], `writes_per_second`, `busy` [%]; whole physical disks only |
 | `network` | 1 min | yes | interface, except `lo` | `rx_`/`tx_` `bytes` [B], `packets`, `errors`, `dropped`, `bandwidth` [B/s]; `collisions`, `carrier_errors`; `carrier` (1 with a cable, 0 without); when the link reports it: `speed` [Mbit/s], `duplex`, `rx_`/`tx_`/`total_bandwidth_usage` [%]; for a port of a built-in switch (DSA): `conduit`, the interface that carries and counts its traffic |
@@ -117,7 +117,7 @@ using var subscription = liveMonitoring.Subscribe(TimeSpan.FromSeconds(2), sampl
 
 - With several subscriptions, the shortest interval wins and every subscriber receives every sample.
 - Disposing the subscription also stops its handler; a handler that throws is logged once and affects no other subscriber.
-- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output.
+- Live metrics have the interval 0, are not aggregated and go only to the subscribers, never to an output. Shares and rates in a live sample cover the time since the previous live sample, so they follow the shortest subscribed interval.
 - The regular values stay the same as without live sampling.
 
 ## Extending
