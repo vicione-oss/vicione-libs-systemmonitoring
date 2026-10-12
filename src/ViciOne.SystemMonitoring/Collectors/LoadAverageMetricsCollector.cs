@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using ViciOne.SystemMonitoring.Metrics;
@@ -112,8 +113,8 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
         {
             var bounds = range.Split('-');
             if (bounds.Length > 2
-                || !int.TryParse(bounds[0], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var first)
-                || !int.TryParse(bounds[^1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var last)
+                || !int.TryParse(bounds[0], NumberStyles.None, CultureInfo.InvariantCulture, out var first)
+                || !int.TryParse(bounds[^1], NumberStyles.None, CultureInfo.InvariantCulture, out var last)
                 || last < first)
             {
                 return null;
@@ -139,13 +140,13 @@ public sealed class LoadAverageMetricsCollector(IFileSystem fileSystem) : ISched
             if (parts.Length < 4)
                 throw new FormatException($"Invalid {Name} format.");
 
-            if (!double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load1))
+            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var load1))
                 throw new FormatException($"Invalid {nameof(load1)} value.");
 
-            if (!double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load5))
+            if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var load5))
                 throw new FormatException($"Invalid {nameof(load5)} value.");
 
-            if (!double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load15))
+            if (!double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var load15))
                 throw new FormatException($"Invalid {nameof(load15)} value.");
 
             var processParts = parts[3].Split('/');
