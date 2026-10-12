@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
@@ -6,22 +7,22 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> logger, IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector
+public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> logger, IFileSystem fileSystem) : IScheduledMetricsCollector, IPrepareMetricsCollector, ILiveMetricsCollector
 {
+    private readonly CpuTimes _intervalBaseline = new();
+    private readonly CpuTimes _liveBaseline = new();
+
     public int IntervalInMinutes { get; } = 1;
     public string Name => "process";
-
-    private readonly Dictionary<int, long> _previousProcessCpu = [];
-    private long _previousTotalCoreTime;
 
     public Task PrepareMetrics(CancellationToken cancellationToken)
     {
         try
         {
             var totalCoreTimeNow = GetTotalCoreTime();
-            _previousTotalCoreTime = totalCoreTimeNow;
-
-            GetAllProcesses(totalCoreTimeNow);
+            _intervalBaseline.TotalCoreTime = totalCoreTimeNow;
+            GetAllProcesses(totalCoreTimeNow, _intervalBaseline);
+            _liveBaseline.CopyFrom(_intervalBaseline);
         }
         catch (Exception ex)
         {
@@ -35,27 +36,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
     {
         try
         {
-            var totalCoreTimeNow = GetTotalCoreTime();
-            var processes = GetAllProcesses(totalCoreTimeNow);
-
-            // cleanup old cache entries for processes that no longer exist
-            var currentPids = processes.Select(p => p.Pid).ToHashSet();
-            foreach (var pid in _previousProcessCpu.Keys.Where(pid => !currentPids.Contains(pid)).ToList())
-                _previousProcessCpu.Remove(pid);
-
-            _previousTotalCoreTime = totalCoreTimeNow;
-
-            return Task.FromResult(new List<Metric>
-            {
-                new()
-                {
-                    Group = Name,
-                    Name = "processes",
-                    IntervalInMinutes = IntervalInMinutes,
-                    Value = processes,
-                    Unit = MetricUnit.None,
-                }
-            });
+            return Task.FromResult(Collect(_intervalBaseline, IntervalInMinutes));
         }
         catch (Exception ex)
         {
@@ -63,12 +44,45 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         }
     }
 
-    private List<LinuxProcessInfo> GetAllProcesses(long totalCoreTimeNow)
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Task.FromResult(Collect(_liveBaseline, 0));
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live process metrics.", ex);
+        }
+    }
+
+    private List<Metric> Collect(CpuTimes baseline, int intervalInMinutes)
+    {
+        var totalCoreTimeNow = GetTotalCoreTime();
+        var processes = GetAllProcesses(totalCoreTimeNow, baseline);
+
+        baseline.Forget(processes.Select(p => p.Pid).ToHashSet());
+        baseline.TotalCoreTime = totalCoreTimeNow;
+
+        return
+        [
+            new()
+            {
+                Group = Name,
+                Name = "processes",
+                IntervalInMinutes = intervalInMinutes,
+                Value = processes,
+                Unit = MetricUnit.None,
+            }
+        ];
+    }
+
+    private List<LinuxProcessInfo> GetAllProcesses(long totalCoreTimeNow, CpuTimes baseline)
     {
         var processes = new List<LinuxProcessInfo>();
         var procDir = "/proc";
 
-        var totalCoreTimeDelta = totalCoreTimeNow - _previousTotalCoreTime;
+        var totalCoreTimeDelta = totalCoreTimeNow - baseline.TotalCoreTime;
         var systemUptime = GetSystemUptime();
 
         foreach (var dir in fileSystem.Directory.GetDirectories(procDir))
@@ -77,7 +91,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             {
                 try
                 {
-                    var processInfo = GetProcessInfo(dir, pid, systemUptime, totalCoreTimeDelta);
+                    var processInfo = GetProcessInfo(dir, pid, systemUptime, totalCoreTimeDelta, baseline);
                     if (processInfo != null)
                         processes.Add(processInfo);
                 }
@@ -95,7 +109,8 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         string procDir,
         int pid,
         double systemUptime,
-        long totalCoreTimeDelta)
+        long totalCoreTimeDelta,
+        CpuTimes baseline)
     {
         try
         {
@@ -114,7 +129,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             try
             {
                 statusLines = fileSystem.File.ReadAllLines(statusFile);
-                statFields = fileSystem.File.ReadAllText(statFile).Split(' ');
+                statFields = SplitStatFields(fileSystem.File.ReadAllText(statFile));
                 if (fileSystem.File.Exists(cmdlineFile))
                     cmdline = fileSystem.File.ReadAllText(cmdlineFile).Replace('\0', ' ').Trim();
             }
@@ -139,8 +154,10 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
 
             double cpuUsage;
             var totalProcTimeNow = utime + stime;
+            var clockTicks = UnsafeNativeMethods.GetClockTicks();
+            var runningSeconds = systemUptime - (startTime / (double)clockTicks);
 
-            if (_previousProcessCpu.TryGetValue(pid, out var prevProcTime))
+            if (baseline.ProcessTimes.TryGetValue(pid, out var prevProcTime))
             {
                 var deltaProc = totalProcTimeNow - prevProcTime;
                 cpuUsage = totalCoreTimeDelta > 0
@@ -149,12 +166,10 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             }
             else
             {
-                var clockTicks = UnsafeNativeMethods.GetClockTicks();
-                var seconds = systemUptime - (startTime / (double)clockTicks);
-                cpuUsage = seconds > 0 ? totalProcTimeNow / clockTicks / seconds * 100.0 : 0;
+                cpuUsage = runningSeconds > 0 ? totalProcTimeNow / clockTicks / runningSeconds * 100.0 : 0;
             }
 
-            _previousProcessCpu[pid] = totalProcTimeNow;
+            baseline.ProcessTimes[pid] = totalProcTimeNow;
 
             return new LinuxProcessInfo
             {
@@ -167,12 +182,27 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
                 MemoryDetails = memoryDetails,
                 MemoryUsageKb = memoryDetails.VmRSSKb + memoryDetails.VmSwapKb,
                 CmdLine = cmdline,
+                StartTime = systemUptime > 0 ? DateTimeOffset.UtcNow - TimeSpan.FromSeconds(Math.Max(runningSeconds, 0)) : null,
             };
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Error processing process '{pid}'.", ex);
         }
+    }
+
+    /// <summary>
+    /// The fields of /proc/[pid]/stat by their position; the name in field 1 is in parentheses and may contain spaces and
+    /// parentheses itself.
+    /// </summary>
+    internal static string[] SplitStatFields(string stat)
+    {
+        var nameStart = stat.IndexOf('(', StringComparison.Ordinal);
+        var nameEnd = stat.LastIndexOf(')');
+        if (nameStart < 0 || nameEnd < nameStart)
+            return stat.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return [stat[..nameStart].Trim(), stat[nameStart..(nameEnd + 1)], .. stat[(nameEnd + 1)..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)];
     }
 
     private static MemoryDetails GetMemoryDetails(string[] statusLines)
@@ -242,7 +272,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             if (uptimeLine != null)
             {
                 var parts = uptimeLine.Split(' ');
-                if (parts.Length > 0 && double.TryParse(parts[0], out var uptime))
+                if (parts.Length > 0 && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var uptime))
                 {
                     if (uptime < 0)
                         throw new InvalidOperationException("Invalid system uptime value.");
@@ -281,6 +311,31 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error reading core stats.", ex);
+        }
+    }
+
+    /// <summary>
+    /// CPU times of the processes and of all cores at one reading, the reference for the next difference.
+    /// </summary>
+    private sealed class CpuTimes
+    {
+        public Dictionary<int, long> ProcessTimes { get; } = [];
+
+        public long TotalCoreTime { get; set; }
+
+        public void CopyFrom(CpuTimes other)
+        {
+            ProcessTimes.Clear();
+            foreach (var (pid, time) in other.ProcessTimes)
+                ProcessTimes[pid] = time;
+
+            TotalCoreTime = other.TotalCoreTime;
+        }
+
+        public void Forget(HashSet<int> runningPids)
+        {
+            foreach (var pid in ProcessTimes.Keys.Where(pid => !runningPids.Contains(pid)).ToList())
+                ProcessTimes.Remove(pid);
         }
     }
 }

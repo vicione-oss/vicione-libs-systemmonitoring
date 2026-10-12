@@ -12,4 +12,5 @@ public static class MetricUnit
     public const string Millisecond = "millisecond";
     public const string DegreeCelsius = "degree celsius";
     public const string Second = "second";
+    public const string Megahertz = "megahertz";
 }

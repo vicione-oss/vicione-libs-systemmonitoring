@@ -14,4 +14,6 @@ internal class RawNetworkStats
     public ulong CarrierErrors { get; init; }
     public int? Speed { get; set; }
     public string? Duplex { get; set; }
+    public bool? Carrier { get; set; }
+    public string? Conduit { get; set; }
 }

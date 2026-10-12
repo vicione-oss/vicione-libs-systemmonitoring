@@ -6,9 +6,10 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
-    private readonly Dictionary<string, double> _previousSwapStats = [];
+    private readonly Dictionary<string, double> _intervalBaseline = [];
+    private readonly Dictionary<string, double> _liveBaseline = [];
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
     private readonly Lock _lock = new();
@@ -24,10 +25,10 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
 
             lock (_lock)
             {
-                var differences = CalculateDifferences(currentSwapStats, _previousSwapStats);
-                UpdatePreviousValues(currentSwapStats);
+                var values = CalculateValues(currentSwapStats, _intervalBaseline);
+                UpdateBaseline(_intervalBaseline, currentSwapStats);
 
-                var metricsData = CreateMetricsData(differences);
+                var metricsData = CreateMetricsData(values);
                 List<Metric> metrics = [];
 
                 metrics.AddRange(metricsData.ToMetrics(Name, null, IntervalInMinutes, m => m.Value));
@@ -53,6 +54,25 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error collecting SWAP metrics.", ex);
+        }
+    }
+
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var currentSwapStats = CollectSwapMetrics();
+
+            lock (_lock)
+            {
+                var values = CalculateValues(currentSwapStats, _liveBaseline);
+                UpdateBaseline(_liveBaseline, currentSwapStats);
+                return Task.FromResult(CreateMetricsData(values).ToMetrics(Name, null, 0, m => m.Value).ToList());
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live SWAP metrics.", ex);
         }
     }
 
@@ -111,25 +131,28 @@ public sealed class SwapMetricsCollector(IFileSystem fileSystem) : IScheduledMet
         return swapStats;
     }
 
-    private static Dictionary<string, double> CalculateDifferences(
+    /// <summary>
+    /// <c>total</c> and <c>used</c> as read, the page counters <c>swap_in</c> and <c>swap_out</c> as the change since the previous reading.
+    /// </summary>
+    private static Dictionary<string, double> CalculateValues(
         Dictionary<string, double> currentData,
         Dictionary<string, double> previousData)
-    {
-        if (previousData.Count == 0)
-            return currentData.ToDictionary(kv => kv.Key, kv => 0.0);
+        => currentData.ToDictionary(kv => kv.Key, kv => !IsCounter(kv.Key)
+            ? kv.Value
+            : previousData.TryGetValue(kv.Key, out var previous) ? kv.Value - previous : 0.0);
 
-        return currentData.ToDictionary(kv => kv.Key, kv => kv.Value - previousData.GetValueOrDefault(kv.Key, 0));
-    }
+    private static bool IsCounter(string name)
+        => name.StartsWith("swap", StringComparison.Ordinal);
 
-    private void UpdatePreviousValues(Dictionary<string, double> currentData)
+    private static void UpdateBaseline(Dictionary<string, double> baseline, Dictionary<string, double> currentData)
     {
-        _previousSwapStats.Clear();
+        baseline.Clear();
         foreach (var kv in currentData)
-            _previousSwapStats[kv.Key] = kv.Value;
+            baseline[kv.Key] = kv.Value;
     }
 
     private static List<LastMetricValue> CreateMetricsData(Dictionary<string, double> swapData)
-        => [.. swapData.Select(kv => new LastMetricValue(kv.Key, kv.Value, kv.Key.StartsWith("swap", false, CultureInfo.InvariantCulture) ? MetricUnit.None : MetricUnit.Kilobyte))];
+        => [.. swapData.Select(kv => new LastMetricValue(kv.Key, kv.Value, IsCounter(kv.Key) ? MetricUnit.None : MetricUnit.Kilobyte))];
 
     private static void UpdateBuffer(
         List<List<LastMetricValue>> buffer,

@@ -49,6 +49,20 @@ public static class MetricsHelper
         }
     }
 
+    /// <summary>
+    /// A copy with interval 0, as live metrics carry it.
+    /// </summary>
+    public static Metric WithoutInterval(Metric metric)
+        => new()
+        {
+            Name = metric.Name,
+            Group = metric.Group,
+            SubGroup = metric.SubGroup,
+            IntervalInMinutes = 0,
+            Value = metric.Value,
+            Unit = metric.Unit,
+        };
+
     public static IEnumerable<Metric> ToMetrics<T>(this IEnumerable<T> metricValues, string group, string? subGroup, int intervalInMinutes, Func<T, object>? getValue = null) where T : IMetricValue
     {
         getValue ??= m => m;

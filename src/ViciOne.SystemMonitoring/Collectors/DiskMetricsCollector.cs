@@ -6,7 +6,7 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class DiskMetricsCollector(ILogger<DiskMetricsCollector> logger, IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class DiskMetricsCollector(ILogger<DiskMetricsCollector> logger, IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
     private readonly Dictionary<string, List<List<LastMetricValue>>> _buffers = [];
     private readonly Lock _lock = new();
@@ -62,6 +62,18 @@ public sealed class DiskMetricsCollector(ILogger<DiskMetricsCollector> logger, I
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error collecting Disk metrics.", ex);
+        }
+    }
+
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Task.FromResult(CollectDiskMetrics().SelectMany(disk => disk.Value.ToMetrics(Name, disk.Key, 0, m => m.Value)).ToList());
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live Disk metrics.", ex);
         }
     }
 

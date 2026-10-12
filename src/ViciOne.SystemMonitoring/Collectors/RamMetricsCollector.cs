@@ -6,7 +6,7 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class RamMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector
+public sealed class RamMetricsCollector(IFileSystem fileSystem) : IScheduledMetricsCollector, ILiveMetricsCollector
 {
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<LastMetricValue>> _fifteenMinuteBuffer = [];
@@ -50,6 +50,21 @@ public sealed class RamMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error collecting RAM metrics.", ex);
+        }
+    }
+
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var ramData = CollectRamMetrics();
+            var metricsData = CreateMetricsData(ramData);
+            metricsData.AddRange(CalculateUsage(ramData));
+            return Task.FromResult(metricsData.ToMetrics(Name, null, 0, m => m.Value).ToList());
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live RAM metrics.", ex);
         }
     }
 

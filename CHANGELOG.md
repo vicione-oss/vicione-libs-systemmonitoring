@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.0 - Unreleased
+
+### Added
+
+- `ILiveMonitoring`, reads the enabled collectors every few seconds while subscribed, without changing the regular values
+- `ILiveMetricsCollector`, the extension point for custom collectors that can also be read live
+- `LinuxProcessInfo.StartTime`, when the process started
+- `DiskIoMetricsCollector` (`disk_io`), read and write throughput, written bytes, writes per second and busy time per disk
+- `CpuFrequencyMetricsCollector` (`cpu_frequency`), current and maximum clock per core, the clock the kernel currently allows and the clock utilisation
+- `network` collector, `carrier` tells whether a cable is plugged in, and `conduit` names the interface behind a switch port such as `lan1`
+
+### Changed
+
+- `swap/…/total` and `swap/…/used` carry the current swap size in kB instead of its change since the previous reading. **Behaviour change:** a consumer that added the values up now gets the size itself
+
+### Fixed
+
+- The uptime and the thermal sensors are read correctly whatever the culture of the process
+- Processes with a space in their name report their CPU usage and start time correctly
+
 ## 1.0.1 - 2026-03-27
 
 ### Fixed

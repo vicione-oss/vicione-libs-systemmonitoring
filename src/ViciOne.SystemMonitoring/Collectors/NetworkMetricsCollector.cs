@@ -7,11 +7,12 @@ using ViciOne.SystemMonitoring.Metrics;
 namespace ViciOne.SystemMonitoring.Collectors;
 
 [SupportedOSPlatform("linux")]
-public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<NetworkMetricsCollector> logger) : IScheduledMetricsCollector, IPrepareMetricsCollector
+public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<NetworkMetricsCollector> logger) : IScheduledMetricsCollector, IPrepareMetricsCollector, ILiveMetricsCollector
 {
     private const string LoopbackInterfaceName = "lo";
 
-    private readonly Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> _previousNetworkStats = [];
+    private readonly Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> _intervalBaseline = [];
+    private readonly Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> _liveBaseline = [];
     private readonly Dictionary<string, List<LastMetricValue[]>> _fiveMinuteBuffers = [];
     private readonly Dictionary<string, List<LastMetricValue[]>> _fifteenMinuteBuffers = [];
     private readonly Lock _lock = new();
@@ -31,19 +32,8 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
             {
                 foreach (var (interfaceName, currentStats) in currentNetworkStats)
                 {
-                    if (!_previousNetworkStats.TryGetValue(interfaceName, out var value))
-                    {
-                        value = (currentStats, currentTimeStamp);
-                        _previousNetworkStats[interfaceName] = value;
+                    if (Difference(_intervalBaseline, interfaceName, currentStats, currentTimeStamp) is not { } metric)
                         continue;
-                    }
-
-                    var (previousStats, lastUpdate) = value;
-                    var timeDifference = (currentTimeStamp - lastUpdate).TotalSeconds;
-
-                    var metric = NetworkStatsFactory.CreateNetworkStats(currentStats, previousStats, timeDifference);
-
-                    UpdatePreviousValues(interfaceName, currentStats, currentTimeStamp);
 
                     var metricsData = CreateMetricsData(metric);
                     var bufferData = metricsData.ToArray();
@@ -74,6 +64,35 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
         }
     }
 
+    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var currentNetworkStats = CollectNetworkMetrics();
+            var currentTimeStamp = DateTime.UtcNow;
+            List<Metric> metrics = [];
+
+            lock (_lock)
+            {
+                foreach (var (interfaceName, currentStats) in currentNetworkStats)
+                {
+                    if (Difference(_liveBaseline, interfaceName, currentStats, currentTimeStamp) is not { } metric)
+                        continue;
+
+                    var metricsData = CreateMetricsData(metric);
+                    AppendAdditionalMetrics(metricsData, metric);
+                    metrics.AddRange(metricsData.ToMetrics(Name, interfaceName, 0, m => m.Value));
+                }
+            }
+
+            return Task.FromResult(metrics);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Error collecting live Network metrics.", ex);
+        }
+    }
+
     public Task PrepareMetrics(CancellationToken cancellationToken)
     {
         try
@@ -83,8 +102,11 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
 
             lock (_lock)
             {
-                foreach (var metricData in metric)
-                    UpdatePreviousValues(metricData.Key, metricData.Value, timestamp);
+                foreach (var (interfaceName, stats) in metric)
+                {
+                    _intervalBaseline[interfaceName] = (stats, timestamp);
+                    _liveBaseline[interfaceName] = (stats, timestamp);
+                }
             }
         }
         catch (Exception ex)
@@ -112,6 +134,8 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
             var stats = CatchIOException(() => ParseNetStats(parts), ex => throw ex);
             stats!.Duplex = CatchIOException(() => ReadDuplex(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
             stats.Speed = CatchIOException(() => ReadSpeed(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
+            stats.Carrier = ReadCarrier(interfaceName);
+            stats.Conduit = CatchIOException(() => ReadConduit(interfaceName), logger.LogCouldNotReadSpecificNetworkMetric);
             networkStats[interfaceName] = stats;
         }
 
@@ -163,6 +187,43 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
         return fileSystem.File.ReadAllText($"/sys/class/net/{interfaceName}/duplex").Replace('\n', ' ').Trim();
     }
 
+    private bool? ReadCarrier(string interfaceName)
+    {
+        if (interfaceName == LoopbackInterfaceName)
+            return null;
+
+        try
+        {
+            return fileSystem.File.ReadAllText($"/sys/class/net/{interfaceName}/carrier").Trim() == "1";
+        }
+        catch (IOException)
+        {
+            // The kernel refuses to report the carrier of an interface that is down.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// For a port of a built-in switch (DSA), such as lan1 on an edge device, the interface that carries its traffic.
+    /// </summary>
+    /// <remarks>
+    /// Linux counts the traffic of such a port only on that interface; the port itself reports zero bytes.
+    /// </remarks>
+    private string? ReadConduit(string interfaceName)
+    {
+        if (interfaceName == LoopbackInterfaceName)
+            return null;
+
+        foreach (var entry in fileSystem.Directory.GetFileSystemEntries($"/sys/class/net/{interfaceName}", "lower_*"))
+        {
+            var lower = fileSystem.Path.GetFileName(entry)["lower_".Length..];
+            if (fileSystem.Directory.Exists($"/sys/class/net/{lower}/dsa"))
+                return lower;
+        }
+
+        return null;
+    }
+
     private int? ReadSpeed(string interfaceName)
     {
         if (interfaceName == LoopbackInterfaceName)
@@ -176,8 +237,19 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
         return speed;
     }
 
-    private void UpdatePreviousValues(string interfaceName, RawNetworkStats currentData, DateTime dateTime)
-        => _previousNetworkStats[interfaceName] = (currentData, dateTime);
+    /// <summary>
+    /// The change since the baseline, which then moves to the current reading; <c>null</c> for an interface seen the first time.
+    /// </summary>
+    private static NetworkStats? Difference(Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> baseline,
+        string interfaceName, RawNetworkStats currentStats, DateTime currentTimeStamp)
+    {
+        var known = baseline.TryGetValue(interfaceName, out var previous);
+        baseline[interfaceName] = (currentStats, currentTimeStamp);
+
+        return known
+            ? NetworkStatsFactory.CreateNetworkStats(currentStats, previous.Stats, (currentTimeStamp - previous.LastUpdate).TotalSeconds)
+            : null;
+    }
 
     private static List<LastMetricValue> CreateMetricsData(NetworkStats data)
         => new()
@@ -200,6 +272,10 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
     {
         if (data.Duplex != null)
             metrics.Add(new("duplex", data.Duplex, MetricUnit.None));
+        if (data.Carrier != null)
+            metrics.Add(new("carrier", data.Carrier.Value ? 1d : 0d, MetricUnit.None));
+        if (data.Conduit != null)
+            metrics.Add(new("conduit", data.Conduit, MetricUnit.None));
         if (data.ReceiveBandwidthUsage != null)
             metrics.Add(new("rx_bandwidth_usage", data.ReceiveBandwidthUsage, MetricUnit.Percent));
         if (data.TransmittBandwidthUsage != null)
