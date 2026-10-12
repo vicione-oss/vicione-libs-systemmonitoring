@@ -57,7 +57,7 @@ services
 - On a tick whose wall-clock minute is divisible by 15, the interval is 15. Otherwise it is 5 when the minute is divisible by 5, and 1 in all other cases.
 - A collector runs on its first tick and then whenever the interval is a multiple of its own interval (1, 5 or 15 minutes).
 - A one-time collector runs on the first tick only.
-- Collectors publish the current value as `Last`. Every 5 and 15 minutes, `cpu`, `cpu_frequency`, `ram`, `swap`, `disk_io`, `network`, `thermal_sensors`, `thermal_zones` and `nginx` add the minimum, average and maximum since the previous aggregate as `Aggregates`; `disk` adds only the 15-minute one, and `loadavg`, `uptime` and `process` publish `Last` only.
+- Collectors publish the current value as `Last`. Every 5 and 15 minutes, `cpu`, `cpu_frequency`, `ram`, `swap`, `disk_io`, `network`, `thermal_sensors`, `thermal_zones` and `nginx` add the minimum, average and maximum since the previous aggregate as `Aggregates`; `disk` adds only the 15-minute one, `thermal_zones` leaves out its trip points, and `loadavg`, `uptime` and `process` publish `Last` only.
 - Values derived from counters (CPU, process CPU, network bandwidth, disk I/O, swapped pages, page cache refaults) cover the time since the previous reading.
 
 ## Collectors

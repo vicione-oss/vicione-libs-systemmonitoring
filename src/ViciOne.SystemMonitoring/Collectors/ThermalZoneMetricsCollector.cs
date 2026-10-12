@@ -43,7 +43,7 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
             lock (_lock)
             {
                 List<Metric> metrics = [.. valuesBySubGroup.SelectMany(v => v.Value.ToMetrics(Name, v.Key, IntervalInMinutes, m => m.Value))];
-                metrics.AddRange(_buffers.Add(interval, valuesBySubGroup));
+                metrics.AddRange(_buffers.Add(interval, valuesBySubGroup.Select(v => KeyValuePair.Create(v.Key, WithoutTrips(v.Value)))));
                 return Task.FromResult(metrics);
             }
         }
@@ -104,6 +104,13 @@ public sealed class ThermalZoneMetricsCollector(IFileSystem fileSystem) : ISched
             throw new InvalidOperationException("I/O error reading the thermal zones.", ex);
         }
     }
+
+    /// <summary>
+    /// The values to aggregate: the trip points are set by the driver and hardly change, so their minimum, average and maximum
+    /// would only repeat them.
+    /// </summary>
+    private static List<LastMetricValue> WithoutTrips(List<LastMetricValue> values)
+        => [.. values.Where(v => v.Name is not ("passive_trip" or "critical_trip"))];
 
     /// <summary>
     /// The type of the zone, or the one read before when it cannot be read now, so that a zone whose type fails once does not

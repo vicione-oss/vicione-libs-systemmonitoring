@@ -264,7 +264,7 @@ public class ThermalZoneMetricsCollector_CollectMetrics
 
         var metrics = await collector.CollectMetrics(5, DateTimeOffset.UtcNow, CancellationToken.None);
 
-        metrics.Where(m => m.IntervalInMinutes == 5).Should().HaveCount(4);
+        metrics.Where(m => m.IntervalInMinutes == 5).Select(m => m.Name).Should().BeEquivalentTo(["temperature", "throttling"]);
     }
 
     /// <summary>
