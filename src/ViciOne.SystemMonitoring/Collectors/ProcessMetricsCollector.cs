@@ -18,9 +18,9 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
     {
         try
         {
-            var totalCoreTimeNow = GetTotalCoreTime();
+            var (totalCoreTimeNow, cores) = ReadCoreTimes();
             _intervalBaseline.TotalCoreTime = totalCoreTimeNow;
-            GetAllProcesses(totalCoreTimeNow, _intervalBaseline);
+            GetAllProcesses(totalCoreTimeNow, cores, _intervalBaseline);
         }
         catch (Exception ex)
         {
@@ -56,8 +56,8 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
 
     private List<Metric> Collect(CpuTimes baseline, int intervalInMinutes)
     {
-        var totalCoreTimeNow = GetTotalCoreTime();
-        var processes = GetAllProcesses(totalCoreTimeNow, baseline);
+        var (totalCoreTimeNow, cores) = ReadCoreTimes();
+        var processes = GetAllProcesses(totalCoreTimeNow, cores, baseline);
 
         baseline.Forget(processes.Select(p => p.Pid).ToHashSet());
         baseline.TotalCoreTime = totalCoreTimeNow;
@@ -75,7 +75,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         ];
     }
 
-    private List<LinuxProcessInfo> GetAllProcesses(long totalCoreTimeNow, CpuTimes baseline)
+    private List<LinuxProcessInfo> GetAllProcesses(long totalCoreTimeNow, int cores, CpuTimes baseline)
     {
         var processes = new List<LinuxProcessInfo>();
         var procDir = "/proc";
@@ -89,7 +89,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             {
                 try
                 {
-                    var processInfo = GetProcessInfo(dir, pid, systemUptime, totalCoreTimeDelta, baseline);
+                    var processInfo = GetProcessInfo(dir, pid, systemUptime, totalCoreTimeDelta, cores, baseline);
                     if (processInfo != null)
                         processes.Add(processInfo);
                 }
@@ -108,6 +108,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         int pid,
         double systemUptime,
         long totalCoreTimeDelta,
+        int cores,
         CpuTimes baseline)
     {
         try
@@ -150,22 +151,11 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             if (utime < 0 || stime < 0 || startTime < 0)
                 throw new InvalidOperationException($"Invalid CPU timing values for PID '{pid}'.");
 
-            double cpuUsage;
             var totalProcTimeNow = utime + stime;
             var clockTicks = UnsafeNativeMethods.GetClockTicks();
             var runningSeconds = systemUptime - (startTime / (double)clockTicks);
-
-            if (baseline.ProcessTimes.TryGetValue(pid, out var prevProcTime))
-            {
-                var deltaProc = totalProcTimeNow - prevProcTime;
-                cpuUsage = totalCoreTimeDelta > 0
-                    ? deltaProc / (double)totalCoreTimeDelta * 100.0
-                    : 0;
-            }
-            else
-            {
-                cpuUsage = runningSeconds > 0 ? totalProcTimeNow / clockTicks / runningSeconds * 100.0 : 0;
-            }
+            var cpuUsage = CpuShare(totalProcTimeNow, baseline.ProcessTimes.TryGetValue(pid, out var prevProcTime) ? prevProcTime : null,
+                totalCoreTimeDelta, runningSeconds, clockTicks, cores);
 
             baseline.ProcessTimes[pid] = totalProcTimeNow;
 
@@ -187,6 +177,27 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         {
             throw new InvalidOperationException($"Error processing process '{pid}'.", ex);
         }
+    }
+
+    /// <summary>
+    /// The share of all cores a process used: since the previous reading, or on its first reading on average since it started.
+    /// </summary>
+    /// <param name="processTicks">The process's user and system time, in clock ticks.</param>
+    /// <param name="previousProcessTicks">The same at the previous reading; <see langword="null"/> on the first reading.</param>
+    /// <param name="totalCoreTicksDelta">The time of all cores since the previous reading, in clock ticks.</param>
+    /// <param name="runningSeconds">How long the process has been running.</param>
+    /// <param name="clockTicks">Clock ticks per second.</param>
+    /// <param name="cores">The number of cores the total time adds up.</param>
+    /// <returns>The share in percent.</returns>
+    internal static double CpuShare(long processTicks, long? previousProcessTicks, long totalCoreTicksDelta, double runningSeconds,
+        int clockTicks, int cores)
+    {
+        if (previousProcessTicks is { } previous)
+            return totalCoreTicksDelta > 0 ? (processTicks - previous) / (double)totalCoreTicksDelta * 100.0 : 0;
+
+        return runningSeconds > 0 && clockTicks > 0 && cores > 0
+            ? processTicks / (double)clockTicks / runningSeconds / cores * 100.0
+            : 0;
     }
 
     /// <summary>
@@ -286,30 +297,36 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         return 0;
     }
 
-    private long GetTotalCoreTime()
+    private (long TotalCoreTime, int Cores) ReadCoreTimes()
     {
         try
         {
-            var line = fileSystem.File.ReadLines("/proc/stat")
-                .First(line => line.StartsWith("cpu", StringComparison.InvariantCulture));
-            var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-            if (fields[0] != "cpu")
-                throw new InvalidOperationException("Invalid CPU line format.");
-
-            try
-            {
-                return fields.Skip(1).Take(10).Sum(field => long.TryParse(field, out var value) ? value : 0);
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Error parsing core stats.", ex);
-            }
+            return ParseCoreTimes(fileSystem.File.ReadLines("/proc/stat"));
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException("Error reading core stats.", ex);
         }
+    }
+
+    /// <summary>
+    /// The time of all cores from the <c>cpu</c> line of /proc/stat and the number of cores from its <c>cpuN</c> lines, the cores
+    /// that time adds up.
+    /// </summary>
+    internal static (long TotalCoreTime, int Cores) ParseCoreTimes(IEnumerable<string> lines)
+    {
+        long? total = null;
+        var cores = 0;
+        foreach (var line in lines.TakeWhile(line => line.StartsWith("cpu", StringComparison.Ordinal)))
+        {
+            var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (fields[0] == "cpu")
+                total = fields.Skip(1).Take(10).Sum(field => long.TryParse(field, out var value) ? value : 0);
+            else if (int.TryParse(fields[0].AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+                cores++;
+        }
+
+        return (total ?? throw new InvalidOperationException("Invalid CPU line format."), cores);
     }
 
     /// <summary>
