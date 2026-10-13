@@ -43,8 +43,18 @@ public class ProcessMetricsCollector_CpuShare
             .Should().Be(15);
 
     [Fact]
-    public void Returns_zero_without_elapsed_time()
-        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: 150, totalCoreTicksDelta: 0, runningSeconds: 0, clockTicks: 100, cores: 4)
+    public void Returns_zero_when_the_cores_have_not_advanced_since_the_previous_reading()
+        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: 150, totalCoreTicksDelta: 0, runningSeconds: 10, clockTicks: 100, cores: 4)
+            .Should().Be(0);
+
+    [Fact]
+    public void Returns_zero_on_the_first_reading_of_a_process_that_has_just_started()
+        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: null, totalCoreTicksDelta: 0, runningSeconds: 0, clockTicks: 100, cores: 4)
+            .Should().Be(0);
+
+    [Fact]
+    public void Returns_zero_on_the_first_reading_without_cores()
+        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: null, totalCoreTicksDelta: 0, runningSeconds: 10, clockTicks: 100, cores: 0)
             .Should().Be(0);
 }
 
