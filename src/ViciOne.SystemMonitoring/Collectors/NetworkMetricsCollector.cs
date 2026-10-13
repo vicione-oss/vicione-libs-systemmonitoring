@@ -12,7 +12,6 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
     private const string LoopbackInterfaceName = "lo";
 
     private readonly Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> _intervalBaseline = [];
-    private readonly Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)> _liveBaseline = [];
     private readonly Dictionary<string, List<LastMetricValue[]>> _fiveMinuteBuffers = [];
     private readonly Dictionary<string, List<LastMetricValue[]>> _fifteenMinuteBuffers = [];
     private readonly Lock _lock = new();
@@ -64,19 +63,20 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
             var currentNetworkStats = CollectNetworkMetrics();
             var currentTimeStamp = DateTime.UtcNow;
+            var baseline = window.Baseline<Dictionary<string, (RawNetworkStats Stats, DateTime LastUpdate)>>(this);
             List<Metric> metrics = [];
 
             lock (_lock)
             {
                 foreach (var (interfaceName, currentStats) in currentNetworkStats)
                 {
-                    if (Difference(_liveBaseline, interfaceName, currentStats, currentTimeStamp) is not { } metric)
+                    if (Difference(baseline, interfaceName, currentStats, currentTimeStamp) is not { } metric)
                         continue;
 
                     var metricsData = CreateMetricsData(metric);
@@ -103,10 +103,7 @@ public sealed class NetworkMetricsCollector(IFileSystem fileSystem, ILogger<Netw
             lock (_lock)
             {
                 foreach (var (interfaceName, stats) in metric)
-                {
                     _intervalBaseline[interfaceName] = (stats, timestamp);
-                    _liveBaseline[interfaceName] = (stats, timestamp);
-                }
             }
         }
         catch (Exception ex)

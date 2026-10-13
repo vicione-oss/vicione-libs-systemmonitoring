@@ -65,7 +65,7 @@ public sealed class DiskMetricsCollector(ILogger<DiskMetricsCollector> logger, I
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {

@@ -16,7 +16,6 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
     private readonly Lock _lock = new();
 
     private readonly CpuTimes _intervalBaseline = new();
-    private readonly CpuTimes _liveBaseline = new();
 
     private readonly List<List<LastMetricValue>> _fiveMinuteBuffer = [];
     private readonly List<List<List<LastMetricValue>>> _perCoreFiveMinuteBuffer = [];
@@ -33,10 +32,7 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
             var (totalCpuData, perCoreCpuData) = CollectCpuMetrics();
 
             lock (_lock)
-            {
                 _intervalBaseline.Update(totalCpuData, perCoreCpuData);
-                _liveBaseline.Update(totalCpuData, perCoreCpuData);
-            }
         }
         catch (Exception ex)
         {
@@ -46,16 +42,17 @@ public sealed class CpuMetricsCollector(IFileSystem fileSystem) : IScheduledMetr
         return Task.CompletedTask;
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
             var (totalCpuData, perCoreCpuData) = CollectCpuMetrics();
+            var baseline = window.Baseline<CpuTimes>(this);
 
             lock (_lock)
             {
-                var (totalPercentages, perCorePercentages) = CalculatePercentages(totalCpuData, perCoreCpuData, _liveBaseline);
-                _liveBaseline.Update(totalCpuData, perCoreCpuData);
+                var (totalPercentages, perCorePercentages) = CalculatePercentages(totalCpuData, perCoreCpuData, baseline);
+                baseline.Update(totalCpuData, perCoreCpuData);
 
                 List<Metric> metrics = [];
                 metrics.AddRange(CreateMetricsData(totalPercentages).ToMetrics(Name, "total", 0, m => m.Value));

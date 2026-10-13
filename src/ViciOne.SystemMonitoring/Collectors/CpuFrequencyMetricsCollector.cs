@@ -43,7 +43,7 @@ public sealed class CpuFrequencyMetricsCollector(IFileSystem fileSystem) : ISche
         }
     }
 
-    public Task<List<Metric>> CollectLiveMetrics(CancellationToken cancellationToken)
+    public Task<List<Metric>> CollectLiveMetrics(LiveWindow window, CancellationToken cancellationToken)
     {
         try
         {
