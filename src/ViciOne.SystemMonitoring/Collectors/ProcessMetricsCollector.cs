@@ -188,7 +188,7 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
     /// <param name="runningSeconds">How long the process has been running.</param>
     /// <param name="clockTicks">Clock ticks per second.</param>
     /// <param name="cores">The number of cores the total time adds up.</param>
-    /// <returns>The share in percent, 0 to 100.</returns>
+    /// <returns>The share in percent.</returns>
     internal static double CpuShare(long processTicks, long? previousProcessTicks, long totalCoreTicksDelta, double runningSeconds,
         int clockTicks, int cores)
     {
