@@ -47,3 +47,22 @@ public class ProcessMetricsCollector_CpuShare
         => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: 150, totalCoreTicksDelta: 0, runningSeconds: 0, clockTicks: 100, cores: 4)
             .Should().Be(0);
 }
+
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
+public class ProcessMetricsCollector_ParseCoreTimes
+{
+    [Fact]
+    public void Counts_the_cores_listed_in_proc_stat()
+    {
+        string[] stat =
+        [
+            "cpu  100 0 50 1000 10 0 5 0 0 0",
+            "cpu0 50 0 25 500 5 0 3 0 0 0",
+            "cpu2 50 0 25 500 5 0 2 0 0 0",
+            "intr 12345 0 0",
+            "ctxt 67890",
+        ];
+
+        ProcessMetricsCollector.ParseCoreTimes(stat).Should().Be((1165L, 2), "an offline core has no line");
+    }
+}
