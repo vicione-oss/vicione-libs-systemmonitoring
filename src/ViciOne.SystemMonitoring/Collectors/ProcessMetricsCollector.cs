@@ -150,22 +150,11 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
             if (utime < 0 || stime < 0 || startTime < 0)
                 throw new InvalidOperationException($"Invalid CPU timing values for PID '{pid}'.");
 
-            double cpuUsage;
             var totalProcTimeNow = utime + stime;
             var clockTicks = UnsafeNativeMethods.GetClockTicks();
             var runningSeconds = systemUptime - (startTime / (double)clockTicks);
-
-            if (baseline.ProcessTimes.TryGetValue(pid, out var prevProcTime))
-            {
-                var deltaProc = totalProcTimeNow - prevProcTime;
-                cpuUsage = totalCoreTimeDelta > 0
-                    ? deltaProc / (double)totalCoreTimeDelta * 100.0
-                    : 0;
-            }
-            else
-            {
-                cpuUsage = runningSeconds > 0 ? totalProcTimeNow / clockTicks / runningSeconds * 100.0 : 0;
-            }
+            var cpuUsage = CpuShare(totalProcTimeNow, baseline.ProcessTimes.TryGetValue(pid, out var prevProcTime) ? prevProcTime : null,
+                totalCoreTimeDelta, runningSeconds, clockTicks, Environment.ProcessorCount);
 
             baseline.ProcessTimes[pid] = totalProcTimeNow;
 
@@ -187,6 +176,27 @@ public sealed class ProcessMetricsCollector(ILogger<ProcessMetricsCollector> log
         {
             throw new InvalidOperationException($"Error processing process '{pid}'.", ex);
         }
+    }
+
+    /// <summary>
+    /// The share of all cores a process used: since the previous reading, or on its first reading on average since it started.
+    /// </summary>
+    /// <param name="processTicks">The process's user and system time, in clock ticks.</param>
+    /// <param name="previousProcessTicks">The same at the previous reading; <see langword="null"/> on the first reading.</param>
+    /// <param name="totalCoreTicksDelta">The time of all cores since the previous reading, in clock ticks.</param>
+    /// <param name="runningSeconds">How long the process has been running.</param>
+    /// <param name="clockTicks">Clock ticks per second.</param>
+    /// <param name="cores">The number of cores.</param>
+    /// <returns>The share in percent, 0 to 100.</returns>
+    internal static double CpuShare(long processTicks, long? previousProcessTicks, long totalCoreTicksDelta, double runningSeconds,
+        int clockTicks, int cores)
+    {
+        if (previousProcessTicks is { } previous)
+            return totalCoreTicksDelta > 0 ? (processTicks - previous) / (double)totalCoreTicksDelta * 100.0 : 0;
+
+        return runningSeconds > 0 && clockTicks > 0 && cores > 0
+            ? processTicks / (double)clockTicks / runningSeconds / cores * 100.0
+            : 0;
     }
 
     /// <summary>

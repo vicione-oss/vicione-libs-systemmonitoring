@@ -23,3 +23,27 @@ public class ProcessMetricsCollector_SplitStatFields
         fields.Should().HaveCount(24);
     }
 }
+
+[SuppressMessage("Interoperability", "CA1416:Validate platform compatibility")]
+public class ProcessMetricsCollector_CpuShare
+{
+    [Fact]
+    public void Takes_the_share_of_all_cores_since_the_previous_reading()
+        => ProcessMetricsCollector.CpuShare(processTicks: 1_300, previousProcessTicks: 1_000, totalCoreTicksDelta: 2_400, runningSeconds: 600, clockTicks: 100, cores: 4)
+            .Should().Be(12.5);
+
+    [Fact]
+    public void Takes_the_average_share_of_all_cores_since_the_start_on_the_first_reading()
+        => ProcessMetricsCollector.CpuShare(processTicks: 75_600, previousProcessTicks: null, totalCoreTicksDelta: 0, runningSeconds: 600, clockTicks: 100, cores: 4)
+            .Should().Be(31.5, "1.26 cores over 600 s are 31.5 % of four cores");
+
+    [Fact]
+    public void Keeps_the_fraction_of_a_second_on_the_first_reading()
+        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: null, totalCoreTicksDelta: 0, runningSeconds: 10, clockTicks: 100, cores: 1)
+            .Should().Be(15);
+
+    [Fact]
+    public void Returns_zero_without_elapsed_time()
+        => ProcessMetricsCollector.CpuShare(processTicks: 150, previousProcessTicks: 150, totalCoreTicksDelta: 0, runningSeconds: 0, clockTicks: 100, cores: 4)
+            .Should().Be(0);
+}
